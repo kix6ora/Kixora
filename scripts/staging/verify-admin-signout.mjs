@@ -18,7 +18,7 @@ page.on('response', (response) => {
 try {
   const pageResponse = await page.goto(adminUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   if (!pageResponse?.ok()) throw new Error(`Admin service returned HTTP ${pageResponse?.status() ?? 'no response'}.`);
-  await page.getByRole('button', { name: /Admin Panel|Admin/i }).first().click();
+  await page.locator('#header-admin-profile-button').click();
   await page.getByLabel('Staff Email').fill(email);
   await page.getByLabel('Security Passcode').fill(password);
   await page.getByRole('button', { name: /Authenticate to Admin Console/i }).click();
@@ -28,7 +28,7 @@ try {
   const authStorageEntries = await page.evaluate(() => Object.keys(localStorage)
     .filter((key) => key.endsWith('-auth-token') && localStorage.getItem(key)).length);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: /Admin Panel|Admin/i }).first().click();
+  await page.locator('#header-admin-profile-button').click();
   await page.getByText('Vault Admin Authentication').waitFor({ timeout: 15000 });
   const protectedViewAfterReload = await page.locator('#admin-route-forbidden').count();
 
