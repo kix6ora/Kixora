@@ -117,6 +117,7 @@ export interface Database {
           rating: number
           reviews_count: number
           sales_count: number
+          model_url: string | null
           is_new_release: boolean
           is_featured: boolean
           is_active: boolean
@@ -140,6 +141,7 @@ export interface Database {
           rating?: number
           reviews_count?: number
           sales_count?: number
+          model_url?: string | null
           is_new_release?: boolean
           is_featured?: boolean
           is_active?: boolean
@@ -163,6 +165,7 @@ export interface Database {
           rating?: number
           reviews_count?: number
           sales_count?: number
+          model_url?: string | null
           is_new_release?: boolean
           is_featured?: boolean
           is_active?: boolean

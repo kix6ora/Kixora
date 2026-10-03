@@ -15,7 +15,7 @@ import { logger } from './logger';
 import { healthCheck } from './src/lib/healthCheck';
 import { getSupabaseAdmin } from './src/lib/supabaseAdmin';
 import { authorizePayFastOrder, initiatePayFastCheckout } from './src/services/payments/payfastCheckout';
-import { buildCspImageSources } from './src/config/cspImageSources';
+import { buildCspConnectSources, buildCspImageSources, buildCspWorkerSources } from './src/config/cspImageSources';
 import { mountProductionStaticAssets } from './src/server/staticAssets';
 
 /**
@@ -91,12 +91,10 @@ async function startServer() {
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"],
         imgSrc: buildCspImageSources(),
         connectSrc: [
-          "'self'",
-          "https://*.supabase.co", "wss://*.supabase.co",
-          "https://api.cloudinary.com", "https://res.cloudinary.com",
-          "https://www.google-analytics.com", "https://accounts.google.com",
+          ...buildCspConnectSources(process.env.VITE_SNEAKER_MODEL_BASE_URL),
           ...(isProduction ? [] : ['ws:', 'wss:']),
         ],
+        workerSrc: buildCspWorkerSources(),
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         frameSrc: ["'self'", "https://accounts.google.com"],
         frameAncestors,
