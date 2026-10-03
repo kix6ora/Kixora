@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { validateProductionEnv } from '../../src/config/env';
+import { getPublicSiteUrl, validateProductionEnv } from '../../src/config/env';
 
 const originalEnv = { ...process.env };
 
@@ -10,6 +10,7 @@ afterEach(() => {
 const payfastBase = () => ({
   NODE_ENV: 'production',
   VITE_PAYMENT_PROVIDER_MODE: 'payfast',
+  VITE_PUBLIC_SITE_URL: 'https://kixora-staging.onrender.com',
   VITE_PAYFAST_MERCHANT_ID: '100001',
   VITE_PAYFAST_MERCHANT_KEY: 'merchant-key',
   PAYFAST_PASSPHRASE: 'strong-passphrase',
@@ -83,4 +84,24 @@ describe('validateProductionEnv', () => {
     ).toBe(true);
   });
 
+});
+
+describe('getPublicSiteUrl', () => {
+  it('normalizes the configured HTTPS site URL to its origin', () => {
+    applyEnv({ VITE_PUBLIC_SITE_URL: 'https://kixora-staging.onrender.com/' });
+    expect(getPublicSiteUrl()).toBe('https://kixora-staging.onrender.com');
+  });
+
+  it('rejects missing or non-origin public-site URLs', () => {
+    applyEnv({ VITE_PUBLIC_SITE_URL: undefined });
+    expect(() => getPublicSiteUrl()).toThrow(/VITE_PUBLIC_SITE_URL is required/);
+
+    applyEnv({ VITE_PUBLIC_SITE_URL: 'https://kixora-staging.onrender.com/auth/confirm' });
+    expect(() => getPublicSiteUrl()).toThrow(/HTTPS origin/);
+  });
+
+  it('requires HTTPS in production', () => {
+    applyEnv({ ...payfastBase(), VITE_PUBLIC_SITE_URL: 'http://127.0.0.1:3000' });
+    expect(() => getPublicSiteUrl()).toThrow(/HTTPS origin/);
+  });
 });
