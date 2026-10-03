@@ -766,6 +766,25 @@ export interface Database {
         }
         Returns: undefined
       }
+      admin_audit_logs_for_admin: {
+        Args: {
+          p_entity_type?: string | null
+          p_action_type?: string | null
+          p_admin_id?: string | null
+          p_limit?: number | null
+          p_offset?: number
+        }
+        Returns: {
+          id: string
+          admin_id: string
+          action_type: string
+          entity_type: string
+          entity_id: string
+          changes: Json
+          ip_address: string | null
+          created_at: string
+        }[]
+      }
       create_pending_order_atomic: {
         Args: {
           p_cart_id: string
