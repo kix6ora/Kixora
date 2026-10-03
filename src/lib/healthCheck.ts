@@ -18,6 +18,7 @@ export const healthCheck: RequestHandler = async (_req, res) => {
   const health = {
     status: 'ok',
     domain: process.env.NODE_ENV === 'production' ? 'kixora-production' : 'kixora-development',
+    commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'unknown',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     checks: {

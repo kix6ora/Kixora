@@ -52,6 +52,8 @@ describe('health check endpoint', () => {
   });
 
   it('uses the admin client ping and preserves the healthy response shape', async () => {
+    const previousCommit = process.env.RENDER_GIT_COMMIT;
+    process.env.RENDER_GIT_COMMIT = '1234567890abcdef';
     const response = createResponse();
 
     await healthCheck({} as never, response as never, vi.fn());
@@ -59,11 +61,14 @@ describe('health check endpoint', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
       status: 'ok',
+      commit: '1234567',
       domain: expect.any(String),
       timestamp: expect.any(String),
       uptime: expect.any(Number),
       checks: { database: 'healthy', supabase: 'healthy' },
     });
+    if (previousCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
+    else process.env.RENDER_GIT_COMMIT = previousCommit;
     expect(state.from).toHaveBeenCalledWith('profiles');
     expect(state.select).toHaveBeenCalledWith('id');
     expect(state.limit).toHaveBeenCalledWith(1);
