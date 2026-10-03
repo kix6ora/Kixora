@@ -16,8 +16,9 @@ import {
   Calendar, 
   Download, 
   ChevronDown,
-  Store
+  Store,
 } from 'lucide-react';
+import { AdminSignOutButton } from './AdminSignOutButton';
 import { AdminProducts } from './AdminProducts';
 import { AdminOrders } from './AdminOrders';
 import { AdminInventory } from './AdminInventory';
@@ -111,26 +112,29 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Bottom User Profile Card matching reference image */}
-        <div className="pt-6 border-t border-[#242424] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img
-              src="https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto,w_120,h_120,c_fill/kixora/avatars/admin_avatar.png"
-              alt="Admin Avatar"
-              className="w-9 h-9 rounded-full object-cover border border-[#333333]"
-            />
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-white truncate">Admin User</div>
-              <div className="text-[10px] text-[#777777] truncate font-mono">admin@kixora.com</div>
+        <div className="pt-6 border-t border-[#242424] space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img
+                src="https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto,w_120,h_120,c_fill/kixora/avatars/admin_avatar.png"
+                alt="Admin Avatar"
+                className="w-9 h-9 rounded-full object-cover border border-[#333333]"
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white truncate">Admin User</div>
+                <div className="text-[10px] text-[#777777] truncate font-mono">admin@kixora.com</div>
+              </div>
             </div>
-          </div>
 
-          <button
-            onClick={() => setCurrentView('store')}
-            className="p-1.5 text-[#888888] hover:text-[#FF7A00] hover:bg-[#202020] rounded-lg transition-colors"
-            title="Return to Customer Store"
-          >
-            <Store className="w-4 h-4" />
-          </button>
+            <button
+              onClick={() => setCurrentView('store')}
+              className="p-1.5 text-[#888888] hover:text-[#FF7A00] hover:bg-[#202020] rounded-lg transition-colors"
+              title="Return to Customer Store"
+            >
+              <Store className="w-4 h-4" />
+            </button>
+          </div>
+          <AdminSignOutButton />
         </div>
       </aside>
 
