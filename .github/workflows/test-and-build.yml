@@ -112,6 +112,11 @@ jobs:
       - name: Run full Playwright test suite
         run: npx playwright test
         env:
+          PLAYWRIGHT_USE_STAGING_SUPABASE: ${{ vars.PLAYWRIGHT_USE_STAGING_SUPABASE || 'false' }}
+          PLAYWRIGHT_SUPABASE_URL: ${{ secrets.PLAYWRIGHT_SUPABASE_URL }}
+          PLAYWRIGHT_SUPABASE_ANON_KEY: ${{ secrets.PLAYWRIGHT_SUPABASE_ANON_KEY }}
+          PLAYWRIGHT_ADMIN_EMAIL: ${{ secrets.PLAYWRIGHT_ADMIN_EMAIL }}
+          PLAYWRIGHT_ADMIN_PASSWORD: ${{ secrets.PLAYWRIGHT_ADMIN_PASSWORD }}
           VITE_CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME || secrets.VITE_CLOUDINARY_CLOUD_NAME }}
           VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET || secrets.VITE_CLOUDINARY_UPLOAD_PRESET }}
         continue-on-error: false

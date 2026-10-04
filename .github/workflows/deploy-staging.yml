@@ -1,0 +1,70 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || secrets.CLOUD_RUN_PROJECT_ID }}
+      GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+      CLOUD_RUN_REGION: ${{ secrets.CLOUD_RUN_REGION || 'africa-southeast1' }}
+      CLOUD_RUN_SERVICE_STAGING: ${{ secrets.CLOUD_RUN_SERVICE_STAGING || 'kixora-staging' }}
+      CLOUD_RUN_SERVICE_PRODUCTION: ${{ secrets.CLOUD_RUN_SERVICE_PRODUCTION || 'kixora-production' }}
+      ARTIFACT_REGISTRY_REPOSITORY: ${{ secrets.ARTIFACT_REGISTRY_REPOSITORY || 'kixora' }}
+      IMAGE_TAG: gcr.io/${{ secrets.GCP_PROJECT_ID || secrets.CLOUD_RUN_PROJECT_ID }}/${{ secrets.ARTIFACT_REGISTRY_REPOSITORY || 'kixora' }}/kixora-staging:${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate deployment requirements
+        run: node scripts/verify-deploy-env.mjs
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: '>= 463.0.0'
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "$CLOUD_RUN_REGION-docker.pkg.dev" --quiet
+
+      - name: Build Docker image
+        run: docker build -t "$IMAGE_TAG" .
+
+      - name: Push Docker image
+        run: docker push "$IMAGE_TAG"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$CLOUD_RUN_SERVICE_STAGING" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$CLOUD_RUN_REGION" \
+            --image "$IMAGE_TAG" \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars="NODE_ENV=staging,SENTRY_ENVIRONMENT=staging"
+
+      - name: Smoke test staging endpoint
+        run: |
+          SERVICE_URL=$(gcloud run services describe "$CLOUD_RUN_SERVICE_STAGING" --project "$GCP_PROJECT_ID" --region "$CLOUD_RUN_REGION" --format='value(status.url)')
+          curl -fsS "$SERVICE_URL/api/health"

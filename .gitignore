@@ -4,6 +4,7 @@ dist/
 .vite/
 coverage/
 .lighthouseci/
+.kilo/
 .DS_Store
 *.log
 .env*
