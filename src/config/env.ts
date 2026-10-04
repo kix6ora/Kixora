@@ -222,3 +222,16 @@ export function isPaymentConfigured(): boolean {
   if (config.paymentProviderMode === 'payfast') return !!config.payfastMerchantId && !!config.payfastMerchantKey;
   throw new Error(`Payment configuration Error: Unsupported payment provider "${config.paymentProviderMode}".`);
 }
+
+export interface ObservabilityConfig {
+  sentryDsn: string;
+  environment: string;
+}
+
+export function getObservabilityConfig(): ObservabilityConfig {
+  const env = typeof process !== 'undefined' ? process.env : {};
+  return {
+    sentryDsn: env.SENTRY_DSN || env.VITE_SENTRY_DSN || '',
+    environment: env.SENTRY_ENVIRONMENT || env.NODE_ENV || 'development',
+  };
+}

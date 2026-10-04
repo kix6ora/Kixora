@@ -26,6 +26,54 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { filterSneakers } from './utils/filterSneakers';
+import { analyticsService } from './services/analyticsService';
+
+const COOKIE_CONSENT_KEY = 'kixora_cookie_consent';
+
+const CookieConsentBanner: React.FC = () => {
+  const [isVisible, setIsVisible] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(COOKIE_CONSENT_KEY) === null;
+  });
+
+  const saveConsent = (accepted: boolean) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(COOKIE_CONSENT_KEY, accepted ? 'accepted' : 'rejected');
+    }
+    analyticsService.setOptOut(!accepted);
+    setIsVisible(false);
+  };
+
+  if (!isVisible) return null;
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-[#2c2c2c] bg-[#141414]/95 px-4 py-3 shadow-2xl backdrop-blur-sm">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-bold text-white">Privacy & cookie preferences</p>
+          <p className="text-xs text-[#b3b3b3]">
+            We use essential cookies for the storefront and may use anonymized analytics for product and UX improvements. You can opt out anytime.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => saveConsent(false)}
+            className="rounded-xl border border-[#353535] bg-[#1b1b1b] px-3 py-2 text-xs font-bold text-[#f5f5f5]"
+          >
+            Essential only
+          </button>
+          <button
+            onClick={() => saveConsent(true)}
+            className="rounded-xl bg-[#FF7A00] px-3 py-2 text-xs font-bold text-black"
+          >
+            Accept analytics
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const MainStorefront: React.FC<{ onOpenMobileFilters: () => void }> = ({ onOpenMobileFilters }) => {
   const { sneakers, filters, setFilters, resetFilters } = useStore();
@@ -299,7 +347,10 @@ const StoreAppContent: React.FC = () => {
 
 export function App() {
   return (
-    <StoreAppContent />
+    <>
+      <CookieConsentBanner />
+      <StoreAppContent />
+    </>
   );
 }
 

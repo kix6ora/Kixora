@@ -2,6 +2,7 @@
  * Kixora Monitoring & Error Reporting Service
  */
 import { sanitizeDataForLogging } from '../utils/security';
+import { getObservabilityConfig } from '../config/env';
 
 export interface ErrorContext {
   userId?: string;
@@ -14,33 +15,51 @@ export interface ErrorContext {
 class MonitoringService {
   private isProduction = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') || (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD);
 
+  private async dispatchToSentry(payload: Record<string, unknown>) {
+    const { sentryDsn } = getObservabilityConfig();
+    if (!sentryDsn) {
+      return false;
+    }
+
+    try {
+      await fetch(sentryDsn, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          environment: getObservabilityConfig().environment,
+          ...payload,
+        }),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Reports an error to the production monitoring system (abstraction).
    */
-  public reportError(error: Error | string, context: ErrorContext = {}): void {
+  public async reportError(error: Error | string, context: ErrorContext = {}): Promise<void> {
     const errorMessage = typeof error === 'string' ? error : error.message;
     const errorStack = error instanceof Error ? error.stack : undefined;
 
-    // 1. Sanitize context and error message
     const sanitizedContext = sanitizeDataForLogging(context);
     const sanitizedMessage = sanitizeDataForLogging(errorMessage);
 
-    // 2. Prepare payload
     const payload = {
       timestamp: new Date().toISOString(),
       level: 'ERROR',
       message: sanitizedMessage,
       context: sanitizedContext,
-      // Stack trace is excluded in production reporting to customers/logs if sensitive,
-      // but usually kept in internal reporting. Here we follow the rule of not exposing it to customers.
-      stack: this.isProduction ? undefined : errorStack, 
+      stack: this.isProduction ? undefined : errorStack,
       environment: (typeof process !== 'undefined' && process.env?.NODE_ENV) || (typeof import.meta !== 'undefined' && (import.meta as any).env?.MODE) || 'development',
     };
 
-    // 3. Dispatch (Mocking production endpoint dispatch)
     if (this.isProduction) {
-      // In a real app: fetch('https://monitoring.kixora.com/api/errors', { method: 'POST', body: JSON.stringify(payload) })
-      console.error('[PRODUCTION-MONITORING]:', JSON.stringify(payload));
+      const sentrySent = await this.dispatchToSentry(payload);
+      if (!sentrySent) {
+        console.error('[PRODUCTION-MONITORING]:', JSON.stringify(payload));
+      }
     } else {
       console.error('[DEV-MONITORING]:', payload);
     }

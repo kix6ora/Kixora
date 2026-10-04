@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Kixora logo">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ff9b3d" />
+      <stop offset="100%" stop-color="#ff6b00" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="#111111"/>
+  <path d="M53 164L128 62l75 102v17H53v-17zm37-18h82v-8L128 85l-38 63v-2z" fill="url(#g)"/>
+  <path d="M82 176h92v18H82z" fill="#f5f5f5" opacity="0.9"/>
+</svg>

@@ -36,7 +36,12 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ isOpen, onClos
             <Shield className="w-5 h-5 text-[#FF7A00]" />
             <h3 className="font-display font-bold text-lg">Privacy Controls</h3>
           </div>
-          <button onClick={onClose} className="p-1 text-[#888888] hover:text-white">
+          <button
+            type="button"
+            aria-label="Close privacy settings"
+            onClick={onClose}
+            className="p-1 text-[#888888] hover:text-white"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -53,6 +58,11 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ isOpen, onClos
               </div>
               <button
                 id="privacy-analytics-toggle"
+                type="button"
+                role="switch"
+                aria-label="Business analytics"
+                aria-checked={!isOptedOut}
+                aria-pressed={!isOptedOut}
                 onClick={handleToggle}
                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                   !isOptedOut ? 'bg-[#FF7A00]' : 'bg-[#333333]'
@@ -66,7 +76,10 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ isOpen, onClos
               </button>
             </div>
             
-            <div className="flex items-center gap-2 pt-2 border-t border-[#282828] text-[10px] text-[#FF7A00]">
+            <div
+              aria-live="polite"
+              className="flex items-center gap-2 pt-2 border-t border-[#282828] text-[10px] text-[#FF7A00]"
+            >
               <Info className="w-3 h-3" />
               <span>{isOptedOut ? 'Tracking is currently DISABLED' : 'Tracking is currently ENABLED'}</span>
             </div>
@@ -78,6 +91,8 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ isOpen, onClos
               and never store unnecessary personal information.
             </p>
             <button
+              type="button"
+              aria-label="Close privacy preferences"
               onClick={onClose}
               className="w-full py-3 bg-[#1F1F1F] hover:bg-[#262626] border border-[#333333] rounded-xl text-xs font-bold transition-colors"
             >
