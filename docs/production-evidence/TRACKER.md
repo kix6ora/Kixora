@@ -44,6 +44,12 @@ Work branch: `production-readiness/audit-execution` (created from `main`).
 - Conclusion: cold-start compile latency, not a code defect. Recommend raising the first-load
   budget (e.g. a warm-up request/global setup) before treating this suite as a gate in CI.
 
+### Committed evidence
+
+- Evidence commit `de541da` (tracker, pinned-commit file, reproduction scripts) and
+  logs commit `092830e` (raw run logs) on branch `production-readiness/audit-execution`,
+  both pushed to `origin` (`git rev-parse origin/production-readiness/audit-execution` = `092830e`).
+
 ### Environment caveat
 
 Local runs execute from `C:\Users\mandl\OneDrive\Desktop\Kixora` (OneDrive-synced), which makes
