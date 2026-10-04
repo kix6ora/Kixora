@@ -5,7 +5,7 @@ import { webhookService } from '../../src/services/webhookService';
 test.describe('Phase 3: Provider webhook validation', () => {
   test('rejects a verified PayFast event without an order reference', async () => {
     const payload = {
-      m_payment_id: 'payfast-missing-order',
+      m_payment_id: '',
       pf_payment_id: 'pf_123',
       payment_status: 'COMPLETE',
       amount_gross: '10.00',
@@ -24,10 +24,9 @@ test.describe('Phase 3: Provider webhook validation', () => {
 
   test('preserves PayFast amount metadata for reconciliation validation', async () => {
     const payload = {
-      m_payment_id: 'pf_phase3_KX-VALIDATION',
+      m_payment_id: 'KX-VALIDATION',
       pf_payment_id: 'pf_123',
       payment_status: 'COMPLETE',
-      custom_str1: 'KX-VALIDATION',
       amount_gross: '1250.00',
     };
     const passphrase = 'phase3-passphrase';

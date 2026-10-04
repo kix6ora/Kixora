@@ -24,6 +24,19 @@ export function timingSafeEqual(a: string, b: string): boolean {
 }
 
 /**
+ * Compare tokens without leaking their lengths through the comparison itself.
+ */
+export function constantTimeTokenEqual(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) {
+    return false;
+  }
+
+  const digestA = crypto.createHash('sha256').update(a, 'utf-8').digest();
+  const digestB = crypto.createHash('sha256').update(b, 'utf-8').digest();
+  return crypto.timingSafeEqual(digestA, digestB);
+}
+
+/**
  * Compute HMAC-SHA256 hex digest for a given payload and secret.
  */
 export function computeHmacSha256(payload: string, secret: string): string {
@@ -148,14 +161,15 @@ export interface PayFastSignatureResult {
 
 /**
  * Generate PayFast parameter string and calculate MD5 signature.
- * Excludes 'signature' parameter and builds URL-encoded key=value string.
+ * Keeps blank values and parameter order because PayFast ITNs sign both.
  */
 export function generatePayFastSignature(
   data: Record<string, any>,
   passphrase?: string
 ): string {
-  // Collect keys except 'signature' and empty values
-  const keys = Object.keys(data).filter(k => k !== 'signature' && data[k] !== undefined && data[k] !== null && data[k] !== '');
+  const keys = Object.keys(data).filter(
+    key => key !== 'signature' && data[key] !== undefined && data[key] !== null
+  );
   
   // PayFast preserves post order or alphabetical order
   const paramPairs: string[] = [];

@@ -95,6 +95,7 @@ export interface OrderCustomer {
 export interface Order {
   id: string;
   orderCode?: string;
+  guestAccessToken?: string;
   trackingNumber: string;
   createdAt: string;
   customer: OrderCustomer;

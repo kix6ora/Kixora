@@ -76,6 +76,10 @@ This guide provides step-by-step instructions for setting up the Kixora staging 
    CUSTOMER_ORIGIN=https://staging.kixora.com
    ADMIN_ORIGIN=https://admin-staging.kixora.com
    CORS_ALLOWED_ORIGINS=https://staging.kixora.com,https://admin-staging.kixora.com
+
+   # Optional ITN replay script inputs (set in a secured shell, not committed files)
+   STAGING_CUSTOMER_URL=https://staging.kixora.com
+   STAGING_ORDER_AMOUNT=<order-total-in-ZAR>
    ```
 
 ## Step 3: Apply Database Migrations
@@ -241,9 +245,14 @@ After staging is set up:
 2. Perform manual QA of critical user flows
 3. Test payment gateway in staging mode
 4. Test PayFast in sandbox mode and verify its ITN webhook handling
-5. Verify whether The Courier Guy has provided sandbox credentials/API access; do not treat the current simulated rates, labels, or tracking as a live integration.
-6. Complete and test the real Courier Guy API and webhook flow before production sign-off.
-7. Prepare production deployment runbook
+5. For a staged ITN replay, provide `STAGING_CUSTOMER_URL`, `STAGING_ORDER_AMOUNT`, `VITE_PAYFAST_MERCHANT_ID`, and `PAYFAST_PASSPHRASE` through the secured runtime environment, then run:
+   ```bash
+   node scripts/staging/payfast-itn-replay.mjs <order-code> <valid|duplicate|wrong-amount|wrong-signature|unknown-order|cancelled>
+   ```
+   The script reports only the HTTP result; never pass secrets as command-line arguments or print the staging environment.
+6. Verify whether The Courier Guy has provided sandbox credentials/API access; do not treat the current simulated rates, labels, or tracking as a live integration.
+7. Complete and test the real Courier Guy API and webhook flow before production sign-off.
+8. Prepare production deployment runbook
 
 ## Contact
 

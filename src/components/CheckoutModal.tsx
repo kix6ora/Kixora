@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useStore, formatPrice } from '../context/StoreContext';
 import { paymentService } from '../services/paymentService';
+import { getEnvConfig } from '../config/env';
+import { supabase } from '../lib/supabase';
 import { 
   X, 
   CheckCircle2, 
@@ -11,6 +13,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getOptimizedImageUrl } from '../lib/cloudinary';
+import { submitPayFastForm } from '../utils/payfastForm';
 
 export const CheckoutModal: React.FC = () => {
   const { 
@@ -60,6 +63,86 @@ export const CheckoutModal: React.FC = () => {
     setPaymentError(null);
 
     try {
+      if (getEnvConfig().paymentProviderMode === 'payfast') {
+        const cartFingerprint = JSON.stringify(
+          cart.map(item => [item.sneaker.id, item.selectedSize, item.quantity])
+        );
+        const pendingKey = 'kixora_payfast_pending_order';
+        let pendingOrder: { orderCode: string; guestAccessToken?: string; cartFingerprint: string } | null = null;
+        const pendingValue = sessionStorage.getItem(pendingKey);
+        if (pendingValue) {
+          try {
+            const parsed = JSON.parse(pendingValue);
+            if (parsed.cartFingerprint === cartFingerprint && typeof parsed.orderCode === 'string') {
+              pendingOrder = parsed;
+            } else {
+              sessionStorage.removeItem(pendingKey);
+            }
+          } catch {
+            sessionStorage.removeItem(pendingKey);
+          }
+        }
+
+        let orderCode = pendingOrder?.orderCode;
+        let guestAccessToken = pendingOrder?.guestAccessToken;
+        if (!orderCode) {
+          const newOrder = await placeOrder(formData, paymentMethod, shippingMethod, undefined, true);
+          orderCode = newOrder.id;
+          guestAccessToken = newOrder.guestAccessToken;
+          sessionStorage.setItem(pendingKey, JSON.stringify({
+            orderCode,
+            guestAccessToken,
+            cartFingerprint,
+          }));
+        }
+        if (guestAccessToken) {
+          sessionStorage.setItem(`kixora_payfast_guest_${orderCode}`, guestAccessToken);
+        }
+
+        const csrfResponse = await fetch('/api/csrf', { credentials: 'same-origin' });
+        const csrfPayload = await csrfResponse.json();
+        if (!csrfResponse.ok || typeof csrfPayload.csrfToken !== 'string') {
+          throw new Error('Unable to secure the PayFast checkout request.');
+        }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'csrf-token': csrfPayload.csrfToken,
+        };
+        if (session?.access_token) {
+          headers.Authorization = `Bearer ${session.access_token}`;
+        }
+
+        const initiateResponse = await fetch('/api/payments/payfast/initiate', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ orderCode, guestAccessToken }),
+        });
+        const initiatePayload: unknown = await initiateResponse.json();
+        if (!initiateResponse.ok) {
+          const errorMessage = typeof initiatePayload === 'object'
+            && initiatePayload !== null
+            && 'error' in initiatePayload
+            && typeof initiatePayload.error === 'string'
+            ? initiatePayload.error
+            : 'Unable to initialize PayFast checkout.';
+          throw new Error(errorMessage);
+        }
+        if (
+          typeof initiatePayload !== 'object'
+          || initiatePayload === null
+          || !('processUrl' in initiatePayload)
+          || !('fields' in initiatePayload)
+        ) {
+          throw new Error('PayFast returned an invalid checkout response.');
+        }
+
+        submitPayFastForm(initiatePayload.processUrl, initiatePayload.fields);
+        return;
+      }
+
       // 1. Initialize or prepare payment intent via payment service
       const tempOrderCode = `KXO-${Math.floor(1000 + Math.random() * 9000)}`;
       const paymentIntentRes = await paymentService.initializePayment({
@@ -88,9 +171,15 @@ export const CheckoutModal: React.FC = () => {
         setPlacedOrder(newOrder);
         setStep(4 as any);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('[CheckoutModal.handleCompleteOrder] Order failed:', err);
-      setPaymentError(err.message || 'Payment authorization was unsuccessful. Please retry payment.');
+      setPaymentError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string'
+            ? err
+            : 'Payment authorization was unsuccessful. Please retry payment.'
+      );
     } finally {
       setIsSubmitting(false);
     }

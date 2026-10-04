@@ -15,14 +15,12 @@ test.describe('Commerce Concurrency & Idempotency Tests', () => {
   });
 
   test('CONC-01: Duplicate webhook processing is blocked by idempotency', async () => {
-    const eventId = 'evt_shared_123';
     const orderCode = 'KX-SHARED-123';
     
     const payload = {
-      m_payment_id: eventId,
+      m_payment_id: orderCode,
       pf_payment_id: 'pf_shared_123',
       payment_status: 'COMPLETE',
-      custom_str1: orderCode,
       amount_gross: '100.00',
     };
     const signed = signedPayFastWebhook(payload);

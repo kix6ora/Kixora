@@ -42,11 +42,45 @@ export interface ProductionEnvValidation {
   errors: string[];
 }
 
-export function getEnvConfig(): ClientEnvConfig {
+function readEnv(key: string): string | undefined {
   const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
   const procEnv = (typeof process !== 'undefined' && process.env) || {};
-  const readEnv = (key: string) => procEnv[key] ?? metaEnv[key];
+  return procEnv[key] ?? metaEnv[key];
+}
 
+export function getPublicSiteUrl(): string {
+  const configuredUrl = readEnv('VITE_PUBLIC_SITE_URL');
+  if (!configuredUrl) {
+    throw new Error('VITE_PUBLIC_SITE_URL is required.');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(configuredUrl);
+  } catch {
+    throw new Error('VITE_PUBLIC_SITE_URL must be a valid public-site origin.');
+  }
+
+  const isProduction = (typeof process !== 'undefined' && process.env.NODE_ENV === 'production')
+    || (typeof import.meta !== 'undefined' && Boolean((import.meta as any).env?.PROD));
+  const isLocalDevelopmentHttp = !isProduction
+    && parsed.protocol === 'http:'
+    && ['localhost', '127.0.0.1'].includes(parsed.hostname);
+  if (
+    (parsed.protocol !== 'https:' && !isLocalDevelopmentHttp)
+    || parsed.username
+    || parsed.password
+    || parsed.pathname !== '/'
+    || parsed.search
+    || parsed.hash
+  ) {
+    throw new Error('VITE_PUBLIC_SITE_URL must be an HTTPS origin without credentials, path, query, or hash.');
+  }
+
+  return parsed.origin;
+}
+
+export function getEnvConfig(): ClientEnvConfig {
   const configuredProvider = readEnv('VITE_PAYMENT_PROVIDER_MODE') || 'mock';
   if (configuredProvider !== 'mock' && configuredProvider !== 'payfast') {
     throw new Error(`Payment configuration Error: Unsupported payment provider "${configuredProvider}".`);
@@ -64,7 +98,7 @@ export function getEnvConfig(): ClientEnvConfig {
     customerDomain: readEnv('VITE_CUSTOMER_DOMAIN') || 'https://kixora.com',
     adminDomain: readEnv('VITE_ADMIN_DOMAIN') || 'https://admin.kixora.com',
     googleClientId: readEnv('VITE_GOOGLE_CLIENT_ID') || '',
-    cloudinaryCloudName: readEnv('VITE_CLOUDINARY_CLOUD_NAME') || 'kixora',
+    cloudinaryCloudName: readEnv('VITE_CLOUDINARY_CLOUD_NAME') || 'vevnhwj6',
     cloudinaryUploadPreset: readEnv('VITE_CLOUDINARY_UPLOAD_PRESET') || 'kixora_product_images',
     cloudinaryApiKey: readEnv('VITE_CLOUDINARY_API_KEY') || '',
   };
@@ -112,6 +146,12 @@ export function validateProductionEnv(): ProductionEnvValidation {
   const server = getServerConfig();
   const errors: string[] = [];
   const provider = client.paymentProviderMode;
+
+  try {
+    getPublicSiteUrl();
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : 'VITE_PUBLIC_SITE_URL is invalid.');
+  }
 
   if (provider !== 'payfast') {
     errors.push('VITE_PAYMENT_PROVIDER_MODE must be payfast in production.');

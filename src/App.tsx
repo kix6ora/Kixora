@@ -7,6 +7,7 @@ import { ProductCard } from './components/ProductCard';
 import { ProductModal } from './components/ProductModal';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
+import { PayFastReturn } from './components/PayFastReturn';
 import { WishlistModal } from './components/WishlistModal';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
 import { DropsCalendar } from './components/DropsCalendar';
@@ -284,6 +285,7 @@ const StoreAppContent: React.FC = () => {
       <ProductModal />
       <CartDrawer />
       <CheckoutModal />
+      <PayFastReturn />
       <WishlistModal />
       <CustomerAuthModal />
       <Toast />

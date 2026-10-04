@@ -22,7 +22,7 @@ test.describe('Phase 3B: Real Payment Gateway Integration & Drivers', () => {
     expect(['mock', 'payfast']).toContain(activeDriver.provider);
   });
 
-  test('PG-03: PayFast driver creates valid redirect payload and ZAR parameters for South African checkout', async () => {
+  test('PG-03: PayFast driver refuses browser-side checkout initiation', async () => {
     const previousMerchantId = process.env.VITE_PAYFAST_MERCHANT_ID;
     const previousMerchantKey = process.env.VITE_PAYFAST_MERCHANT_KEY;
     process.env.VITE_PAYFAST_MERCHANT_ID = '10000100';
@@ -39,14 +39,9 @@ test.describe('Phase 3B: Real Payment Gateway Integration & Drivers', () => {
         customerName: 'Kagiso Molefe',
       });
 
-      expect(intent.success).toBe(true);
+      expect(intent.success).toBe(false);
       expect(intent.provider).toBe('payfast');
-      expect(intent.paymentIntentId).toContain('KXO-4412');
-      expect(intent.redirectUrl).toBeDefined();
-      expect(intent.redirectUrl).toContain('payfast.co.za/eng/process');
-      expect(intent.gatewayData?.merchant_id).toBeDefined();
-      expect(intent.gatewayData?.amount).toBe('3200.00');
-      expect(intent.gatewayData?.email_address).toBe('kagiso.m@kixora.co.za');
+      expect(intent.errorCode).toBe('PAYFAST_SERVER_INITIATION_REQUIRED');
     } finally {
       if (previousMerchantId === undefined) delete process.env.VITE_PAYFAST_MERCHANT_ID;
       else process.env.VITE_PAYFAST_MERCHANT_ID = previousMerchantId;
@@ -61,7 +56,7 @@ test.describe('Phase 3B: Real Payment Gateway Integration & Drivers', () => {
     // 1. COMPLETE event
     const completePayload = {
       payment_status: 'COMPLETE',
-      m_payment_id: 'pf_1700000000_KXO-5555',
+      m_payment_id: 'KXO-5555',
       pf_payment_id: '12345678',
       amount_gross: '2500.00',
     };
@@ -79,7 +74,7 @@ test.describe('Phase 3B: Real Payment Gateway Integration & Drivers', () => {
     // 2. FAILED event
     const failedPayload = {
       payment_status: 'FAILED',
-      m_payment_id: 'pf_1700000000_KXO-5555',
+      m_payment_id: 'KXO-5555',
       pf_payment_id: '12345678',
     };
     const failedRes = await payfastDriver.handleWebhook({
@@ -95,7 +90,8 @@ test.describe('Phase 3B: Real Payment Gateway Integration & Drivers', () => {
     // 3. CANCELLED event
     const cancelledPayload = {
       payment_status: 'CANCELLED',
-      m_payment_id: 'pf_1700000000_KXO-5555',
+      m_payment_id: 'KXO-5555',
+      pf_payment_id: '12345678',
     };
     const cancelledRes = await payfastDriver.handleWebhook({
       provider: 'payfast',

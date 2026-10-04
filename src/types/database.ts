@@ -117,6 +117,7 @@ export interface Database {
           rating: number
           reviews_count: number
           sales_count: number
+          model_url: string | null
           is_new_release: boolean
           is_featured: boolean
           is_active: boolean
@@ -140,6 +141,7 @@ export interface Database {
           rating?: number
           reviews_count?: number
           sales_count?: number
+          model_url?: string | null
           is_new_release?: boolean
           is_featured?: boolean
           is_active?: boolean
@@ -163,6 +165,7 @@ export interface Database {
           rating?: number
           reviews_count?: number
           sales_count?: number
+          model_url?: string | null
           is_new_release?: boolean
           is_featured?: boolean
           is_active?: boolean
@@ -762,6 +765,25 @@ export interface Database {
           p_description: string
         }
         Returns: undefined
+      }
+      admin_audit_logs_for_admin: {
+        Args: {
+          p_entity_type?: string | null
+          p_action_type?: string | null
+          p_admin_id?: string | null
+          p_limit?: number | null
+          p_offset?: number
+        }
+        Returns: {
+          id: string
+          admin_id: string
+          action_type: string
+          entity_type: string
+          entity_id: string
+          changes: Json
+          ip_address: string | null
+          created_at: string
+        }[]
       }
       create_pending_order_atomic: {
         Args: {

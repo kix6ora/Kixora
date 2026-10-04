@@ -22,33 +22,13 @@ export const auditAdminRepository = {
       return [];
     }
 
-    let query = supabase
-      .from('admin_audit_logs')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (filters?.entityType) {
-      query = query.eq('entity_type', filters.entityType);
-    }
-
-    if (filters?.actionType) {
-      query = query.eq('action_type', filters.actionType);
-    }
-
-    if (filters?.adminId) {
-      query = query.eq('admin_id', filters.adminId);
-    }
-
-    if (filters?.limit) {
-      query = query.limit(filters.limit);
-    }
-
-    if (filters?.offset) {
-      const limit = filters.limit || 20;
-      query = query.range(filters.offset, filters.offset + limit - 1);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await supabase.rpc('admin_audit_logs_for_admin', {
+      p_entity_type: filters?.entityType ?? null,
+      p_action_type: filters?.actionType ?? null,
+      p_admin_id: filters?.adminId ?? null,
+      p_limit: filters?.limit ?? null,
+      p_offset: filters?.offset ?? 0,
+    });
     if (error) {
       console.error('[auditAdminRepository.getAuditLogs] Error:', error);
       throw error;

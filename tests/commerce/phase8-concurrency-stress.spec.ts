@@ -16,14 +16,12 @@ test.describe('Phase 8: Inventory Concurrency & Race-Condition Stress Tests', ()
   });
 
   test('CONC-01: Simultaneous duplicate webhooks for the same order are idempotent', async () => {
-    const eventId = 'evt_stress_parallel_001';
     const orderCode = 'KX-STRESS-100';
 
     const payload = {
-      m_payment_id: eventId,
+      m_payment_id: orderCode,
       pf_payment_id: 'pf_stress_001',
       payment_status: 'COMPLETE',
-      custom_str1: orderCode,
       amount_gross: '28500.00',
     };
     const signed = signedPayFastWebhook(payload);

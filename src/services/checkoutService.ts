@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { isSupabaseCheckoutEnabled } from '../config/features';
+import { getEnvConfig } from '../config/env';
 import { CartItem } from '../types';
 import { paymentService } from './paymentService';
 import { emailService } from './email/emailService';
@@ -45,10 +46,10 @@ export interface CheckoutResult {
 
 export const checkoutService = {
   /**
-   * Phase 3A Refactored Checkout Flow:
+   * Checkout Flow:
    * 1. Cart & Customer Validation
    * 2. Inventory / Stock Preview
-   * 3. Payment Intent Initialization (via paymentService)
+   * 3. Create PayFast orders first; mock mode keeps its payment-intent flow
    * 4. Atomic Order Finalization & Inventory Locking (via place_order_atomic RPC)
    */
   async placeOrderAtomic(input: CheckoutInput): Promise<CheckoutResult> {
@@ -70,27 +71,39 @@ export const checkoutService = {
       };
     }
 
-    // Calculate preliminary total for payment intent initialization
+    const payfastMode = getEnvConfig().paymentProviderMode === 'payfast';
     const subtotal = items.reduce((sum, i) => sum + (i.sneaker?.price || 0) * (i.quantity || 1), 0);
     const discount = input.promoCode ? Math.round(subtotal * 0.1) : 0;
     const shippingFee = subtotal >= 2000 ? 0 : 150;
     const total = Math.max(0, subtotal - discount + shippingFee);
 
-    // Step 2: Payment Intent Initialization (Phase 3A Payment Abstraction)
     const mockOrderCode = `KXO-${Math.floor(1000 + Math.random() * 9000)}`;
-    const paymentIntent = await paymentService.initializePayment({
-      amount: total,
-      currency: 'ZAR',
-      orderCode: mockOrderCode,
-      customerEmail: input.customerInfo.email,
-    });
+    let paymentReference = input.paymentReference || null;
 
-    if (!paymentIntent.success) {
+    if (payfastMode && (!isSupabaseConfigured() || !isSupabaseCheckoutEnabled())) {
       return {
         success: false,
-        error: paymentIntent.error || 'Payment initialization failed.',
-        errorCode: 'PAYMENT_INIT_FAILED',
+        error: 'PayFast checkout requires the Supabase order service.',
+        errorCode: 'SUPABASE_CHECKOUT_REQUIRED',
       };
+    }
+
+    if (!payfastMode) {
+      const paymentIntent = await paymentService.initializePayment({
+        amount: total,
+        currency: 'ZAR',
+        orderCode: mockOrderCode,
+        customerEmail: input.customerInfo.email,
+      });
+
+      if (!paymentIntent.success) {
+        return {
+          success: false,
+          error: paymentIntent.error || 'Payment initialization failed.',
+          errorCode: 'PAYMENT_INIT_FAILED',
+        };
+      }
+      paymentReference = input.paymentReference || paymentIntent.paymentIntentId || null;
     }
 
     // Step 3: Fallback / Mock mode when Supabase is unconfigured
@@ -155,7 +168,7 @@ export const checkoutService = {
         p_promo_code: input.promoCode || null,
         p_shipping_method: input.shippingMethod || 'Express Vault Courier',
         p_payment_method: input.paymentMethod || 'Credit / Debit Card',
-        p_payment_reference: input.paymentReference || paymentIntent.paymentIntentId || null,
+        p_payment_reference: payfastMode ? null : paymentReference,
       });
 
       if (error) {
@@ -179,33 +192,43 @@ export const checkoutService = {
         };
       }
 
-      // Trigger asynchronous order confirmation email pipeline
-      emailService.sendOrderConfirmation({
-        orderCode: data.order_code,
-        customerEmail: input.customerInfo.email,
-        customerName: input.customerInfo.fullName,
-        items: items.map(i => ({
-          name: i.sneaker?.name || 'Sneaker Grail',
-          sku: i.sneaker?.sku,
-          sizeUs: Number(i.selectedSize || 9),
-          quantity: Number(i.quantity || 1),
-          unitPrice: Number(i.sneaker?.price || 0),
-        })),
-        subtotal: data.subtotal,
-        discount: data.discount,
-        shippingFee: data.shipping_fee,
-        total: data.total,
-        shippingAddress: {
-          street: input.customerInfo.street,
-          city: input.customerInfo.city,
-          state: input.customerInfo.state,
-          zip: input.customerInfo.zip,
-          country: input.customerInfo.country,
-        },
-        paymentMethod: input.paymentMethod || 'Credit / Debit Card',
-        trackingNumber: data.tracking_number,
-        trackingUrl: `https://kixora.com/?track=${data.tracking_number}`,
-      }).catch(e => console.warn('[checkoutService] Background email dispatch notice:', e));
+      if (payfastMode && (!data || data.payment_status !== 'pending' || typeof data.order_code !== 'string')) {
+        console.error('[checkoutService.placeOrderAtomic] PayFast order was not confirmed as pending.');
+        return {
+          success: false,
+          error: 'Unable to verify the pending order before starting payment.',
+          errorCode: 'ORDER_NOT_PENDING',
+        };
+      }
+
+      if (!payfastMode) {
+        emailService.sendOrderConfirmation({
+          orderCode: data.order_code,
+          customerEmail: input.customerInfo.email,
+          customerName: input.customerInfo.fullName,
+          items: items.map(i => ({
+            name: i.sneaker?.name || 'Sneaker Grail',
+            sku: i.sneaker?.sku,
+            sizeUs: Number(i.selectedSize || 9),
+            quantity: Number(i.quantity || 1),
+            unitPrice: Number(i.sneaker?.price || 0),
+          })),
+          subtotal: data.subtotal,
+          discount: data.discount,
+          shippingFee: data.shipping_fee,
+          total: data.total,
+          shippingAddress: {
+            street: input.customerInfo.street,
+            city: input.customerInfo.city,
+            state: input.customerInfo.state,
+            zip: input.customerInfo.zip,
+            country: input.customerInfo.country,
+          },
+          paymentMethod: input.paymentMethod || 'Credit / Debit Card',
+          trackingNumber: data.tracking_number,
+          trackingUrl: `https://kixora.com/?track=${data.tracking_number}`,
+        }).catch(e => console.warn('[checkoutService] Background email dispatch notice:', e));
+      }
 
       return {
         success: true,

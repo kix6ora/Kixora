@@ -115,7 +115,7 @@ test.describe('Phase 10: Webhook Security Hardening & Replay Attack Protection',
     const passphrase = 'kixora_vault_passphrase_test';
 
     const itnData = {
-      m_payment_id: 'KX_PAYFAST_9988',
+      m_payment_id: 'KX-ORD-9988',
       pf_payment_id: 'PF_12345678',
       payment_status: 'COMPLETE',
       item_name: 'Nike Dunk Low Reverse Panda - 10 US',

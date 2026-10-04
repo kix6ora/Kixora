@@ -16,7 +16,7 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
   test('WH-03: PayFast ITN MD5 signature verification validates correct parameter hashes with passphrase', async () => {
     const passphrase = 'kixora_secure_passphrase';
     const itnData: Record<string, string> = {
-      m_payment_id: 'pf_1700000000_KX-8899',
+      m_payment_id: 'KX-8899',
       pf_payment_id: '1234567',
       payment_status: 'COMPLETE',
       item_name: 'Kixora Vault Order #KX-8899',
@@ -50,7 +50,7 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
   });
 
   test('WH-04: Webhook idempotency registry blocks duplicate event execution', async () => {
-    const eventId = 'evt_idempotency_unique_9988';
+    const eventId = 'pf_idempotency_test:COMPLETE';
     const provider = 'payfast';
 
     // 1. Initially not processed
@@ -70,10 +70,9 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
 
     // 4. Webhook service processWebhook returns idempotent flag on second call
     const payload = {
-      m_payment_id: eventId,
+      m_payment_id: 'KX-9988',
       pf_payment_id: 'pf_idempotency_test',
       payment_status: 'COMPLETE',
-      custom_str1: 'KX-9988',
       amount_gross: '100.00',
     };
     const duplicateSecret = 'payfast_idempotency_test';
@@ -93,7 +92,7 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
   test('WH-05: Webhook service reconciles payment success: marks order paid, authenticates grail, and confirms stock deduction', async () => {
     const orderCode = 'KX-WEBHOOK-PAID-01';
     const payload = {
-      m_payment_id: `pf_paid_${orderCode}`,
+      m_payment_id: orderCode,
       pf_payment_id: 'pf_paid_001',
       payment_status: 'COMPLETE',
       custom_str1: orderCode,
@@ -117,7 +116,7 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
   test('WH-06: Webhook service reconciles payment failure: marks order failed and releases reserved stock', async () => {
     const orderCode = 'KX-WEBHOOK-FAIL-01';
     const payload = {
-      m_payment_id: `pf_failed_${orderCode}`,
+      m_payment_id: orderCode,
       pf_payment_id: '998877',
       payment_status: 'FAILED',
       custom_str1: orderCode,

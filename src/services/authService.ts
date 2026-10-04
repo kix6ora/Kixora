@@ -8,6 +8,7 @@ import {
   SignInCredentials,
 } from '../types/auth';
 import { extractRoleFromUser, extractRoleFromAppMetadata } from '../utils/roleUtils';
+import { getPublicSiteUrl } from '../config/env';
 
 const MOCK_STORAGE_KEY = 'kixora_auth_session';
 let inMemorySession: AuthSession | null = null;
@@ -92,6 +93,7 @@ export const authService = {
           email,
           password,
           options: {
+            emailRedirectTo: getPublicSiteUrl(),
             data: {
               full_name: fullName,
               phone: phone || '',

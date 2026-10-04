@@ -91,7 +91,13 @@ interface StoreContextType {
   toggleDropNotify: (dropId: string) => void;
 
   // Order & Checkout Actions
-  placeOrder: (customerData: Order['customer'], paymentMethod: string, shippingMethod: string, paymentReference?: string) => Promise<Order>;
+  placeOrder: (
+    customerData: Order['customer'],
+    paymentMethod: string,
+    shippingMethod: string,
+    paymentReference?: string,
+    preserveCart?: boolean
+  ) => Promise<Order>;
 
   // Admin Actions
   addSneaker: (sneaker: Omit<Sneaker, 'id' | 'rating' | 'reviewsCount'>) => void;
@@ -342,7 +348,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ? await cartRepository.getCart(currentUser.id)
             : [];
           if (isMounted && isSupabaseCartEnabled() && Array.isArray(serverCartItems)) {
-            setCart(serverCartItems);
+            const paymentCompleted = sessionStorage.getItem('kixora_payfast_cart_cleared') === 'true';
+            if (paymentCompleted) {
+              sessionStorage.removeItem('kixora_payfast_cart_cleared');
+            } else {
+              setCart(serverCartItems);
+            }
           }
 
           // 3. Fetch customer orders from Supabase
@@ -632,7 +643,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     customerData: Order['customer'],
     paymentMethod: string,
     shippingMethod: string,
-    paymentReference?: string
+    paymentReference?: string,
+    preserveCart = false
   ): Promise<Order> => {
     const subtotal = cart.reduce((sum, item) => sum + item.sneaker.price * item.quantity, 0);
     const discount = appliedPromo ? (subtotal * appliedPromo.discountPercent) / 100 : 0;
@@ -671,6 +683,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const newOrder: Order = {
       id: orderId,
+      guestAccessToken: checkoutRes.guestAccessToken,
       trackingNumber,
       createdAt: new Date().toISOString(),
       customer: customerData,
@@ -711,45 +724,47 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ]
     };
 
-    // Deduct stock locally
-    setSneakers(prevSneakers => {
-      return prevSneakers.map(sneaker => {
-        const matchingCartItems = cart.filter(item => item.sneaker.id === sneaker.id);
-        if (matchingCartItems.length === 0) return sneaker;
+    if (!preserveCart) {
+      setSneakers(prevSneakers => {
+        return prevSneakers.map(sneaker => {
+          const matchingCartItems = cart.filter(item => item.sneaker.id === sneaker.id);
+          if (matchingCartItems.length === 0) return sneaker;
 
-        const updatedSizes = sneaker.sizes.map(sz => {
-          const cartForSize = matchingCartItems.find(i => i.selectedSize === sz.size);
-          if (cartForSize) {
-            return {
-              ...sz,
-              stock: Math.max(0, sz.stock - cartForSize.quantity)
-            };
-          }
-          return sz;
+          const updatedSizes = sneaker.sizes.map(sz => {
+            const cartForSize = matchingCartItems.find(i => i.selectedSize === sz.size);
+            if (cartForSize) {
+              return {
+                ...sz,
+                stock: Math.max(0, sz.stock - cartForSize.quantity)
+              };
+            }
+            return sz;
+          });
+
+          return {
+            ...sneaker,
+            sizes: updatedSizes
+          };
         });
-
-        return {
-          ...sneaker,
-          sizes: updatedSizes
-        };
       });
-    });
 
-    setOrders(prev => [newOrder, ...prev]);
-    setCart([]);
-    if (currentUser?.id && isSupabaseCartEnabled()) {
-      void cartAdapter.syncClearCart(currentUser.id);
+      setOrders(prev => [newOrder, ...prev]);
+      setCart([]);
+      if (currentUser?.id && isSupabaseCartEnabled()) {
+        void cartAdapter.syncClearCart(currentUser.id);
+      }
+      setAppliedPromo(null);
+      setTrackingOrder(newOrder);
+
+      analyticsService.trackEvent('purchase_success', {
+        orderId: orderId,
+        cartValue: finalTotal,
+        itemCount: cart.length
+      });
+
+      showToast('Vault Order Placed!', `Order ${orderId} successfully created.`, 'success');
     }
-    setAppliedPromo(null);
-    setTrackingOrder(newOrder);
 
-    analyticsService.trackEvent('purchase_success', {
-      orderId: orderId,
-      cartValue: finalTotal,
-      itemCount: cart.length
-    });
-
-    showToast('Vault Order Placed!', `Order ${orderId} successfully created.`, 'success');
     return newOrder;
   };
 
