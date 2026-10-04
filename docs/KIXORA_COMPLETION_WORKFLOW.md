@@ -87,7 +87,7 @@ Master dependency-aware roadmap from the 2026-10-04 baseline. Status is evidence
 
 ## Phase 6 — Admin/API and security hardening (P1)
 
-**Current state/problems:** Express has Helmet/CORS/CSRF/rate limit/body limits; XSS risk in crawler HTML; shipping label/email endpoint authorization requires verification; environment failures cause staging startup abort.
+**Current state/problems:** Express has Helmet/CORS/CSRF/rate limit/body limits; XSS risk in crawler HTML; shipping-label and order-email routes now require a verified Supabase user and admin/super-admin profile role (CI verification pending); environment failures cause staging startup abort.
 
 **Dependencies/files:** server.ts, env.ts, admin services, shipping/email services, CSP/CORS/cookies, upload configuration.
 
