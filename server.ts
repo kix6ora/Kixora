@@ -13,6 +13,7 @@ import { emailService } from './src/services/email/emailService';
 import { getEnvConfig, getServerConfig, validateProductionEnv } from './src/config/env';
 import { logger } from './logger';
 import { supabase, isSupabaseConfigured } from './src/lib/supabase';
+import { getSupabaseAdmin } from './src/lib/supabaseAdmin';
 
 /**
  * Kixora Production Server (Express + Vite)
@@ -229,6 +230,43 @@ async function startServer() {
     message: { error: 'Too many checkout attempts, please contact support if you are having issues.' }
   });
 
+  // Privileged operational endpoints must use a verified Supabase session and
+  // the server-side profile role. CSRF alone does not authenticate a caller.
+  const requireAdmin: express.RequestHandler = async (req, res, next) => {
+    const authorization = req.get('authorization') || '';
+    const accessToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!accessToken || !isSupabaseConfigured()) {
+      return res.status(401).json({ error: 'Admin authentication required' });
+    }
+
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+      if (authError || !user) {
+        return res.status(401).json({ error: 'Admin authentication required' });
+      }
+
+      const { data: profile, error: profileError } = await getSupabaseAdmin()
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profileError) {
+        logger.error('[Admin API] Failed to verify profile role', { error: profileError.message });
+        return res.status(503).json({ error: 'Authorization service unavailable' });
+      }
+      if (!profile || !['admin', 'super_admin'].includes(profile.role)) {
+        return res.status(403).json({ error: 'Admin privileges required' });
+      }
+
+      return next();
+    } catch (error) {
+      logger.error('[Admin API] Authorization check failed', {
+        error: error instanceof Error ? error.message : 'Unknown authorization error',
+      });
+      return res.status(503).json({ error: 'Authorization service unavailable' });
+    }
+  };
+
   // Apply limiters
   app.use('/api/', apiLimiter);
   app.use('/api/auth/', authLimiter);
@@ -435,7 +473,7 @@ async function startServer() {
    * POST /api/shipping/labels
    * Admin / Automation Carrier Waybill Label Generation
    */
-  app.post('/api/shipping/labels', csrfProtection, async (req, res) => {
+  app.post('/api/shipping/labels', csrfProtection, requireAdmin, async (req, res) => {
     try {
       const label = await shippingService.createShipmentLabel(req.body);
       res.json(label);
@@ -449,7 +487,7 @@ async function startServer() {
    * POST /api/notifications/email/order-confirmation
    * Transactional Order Confirmation Dispatch
    */
-  app.post('/api/notifications/email/order-confirmation', csrfProtection, async (req, res) => {
+  app.post('/api/notifications/email/order-confirmation', csrfProtection, requireAdmin, async (req, res) => {
     try {
       const result = await emailService.sendOrderConfirmation(req.body);
       res.json(result);
@@ -518,3 +556,4 @@ async function startServer() {
   logger.error('Failed to start server', { error: err.message });
   process.exit(1);
 });
+
