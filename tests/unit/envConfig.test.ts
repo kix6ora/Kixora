@@ -10,6 +10,9 @@ afterEach(() => {
 const payfastBase = () => ({
   NODE_ENV: 'production',
   VITE_PAYMENT_PROVIDER_MODE: 'payfast',
+  VITE_SUPABASE_URL: 'https://example.supabase.co',
+  VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+  SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
   VITE_PAYFAST_MERCHANT_ID: '100001',
   VITE_PAYFAST_MERCHANT_KEY: 'merchant-key',
   PAYFAST_PASSPHRASE: 'strong-passphrase',
@@ -83,4 +86,12 @@ describe('validateProductionEnv', () => {
     ).toBe(true);
   });
 
+  it('requires a server-only Supabase service-role key for production reconciliation', () => {
+    applyEnv({ ...payfastBase(), SUPABASE_SERVICE_ROLE_KEY: undefined });
+    const result = validateProductionEnv();
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes('SUPABASE_SERVICE_ROLE_KEY'))).toBe(true);
+  });
+
 });
+

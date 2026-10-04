@@ -2,7 +2,7 @@
 
 **Assessment date:** 2026-10-03  
 **Status:** NOT PRODUCTION READY  
-**Audit mode:** Read-only inspection of GitHub source and CI, Supabase production/staging metadata and security advisors, and Render service/deploy/log metadata. No production data was read beyond schema/catalog metadata. No live exploit was attempted. No app, database, deployment, or secret changes were made.
+**Initial audit mode:** Read-only inspection of GitHub source and CI, Supabase production/staging metadata and security advisors, and Render service/deploy/log metadata. No production data was read beyond schema/catalog metadata. No live exploit was attempted. The subsequent completion-work iteration adds a scoped app/migration/test change on this branch; it has not been applied to either live database or deployed.
 
 ## Executive summary
 
@@ -109,3 +109,8 @@ Latest observed PR #22 results:
 Render returned storefront Kixora-staging (srv-db05hdqd0e5s73a6el5g) and admin kixora-admin-staging (srv-db05ifhsrm7s73e6bnog). Both are Frankfurt/free/one instance, auto-deploy staging/payfast-checkout, no health path, public onrender.com hostname enabled, no PR preview. Latest deploys update_failed; build succeeded but startup failed missing VITE_PUBLIC_SITE_URL. Metrics were empty. No production Render service appeared in connected workspace; do not infer a production deployment exists.
 
 Release strategy: keep production unchanged; fix P0 function authorization; reconcile forward migrations; harden XSS/auth/RPC boundaries; repair CI and dependency findings; verify role/payment/order/inventory behavior in disposable staging; demonstrate restore, rollback and alerting; then request a separate production go/no-go. No deployment approval was granted.
+
+
+## Completion-work update (2026-10-04)
+
+The first P0 remediation slice is included on production-hardening: server-only service-role webhook reconciliation, revocation of direct anonymous/authenticated payment confirmation and reservation release, admin/service-role bounded stale-order cleanup, production service-key validation, and migration regression checks. Local lint/typecheck, build, 18 Vitest tests, and in-memory migration/integrity validation passed. The database validator now checks permission-statement forms that its SQL AST parser cannot parse. Live PostgreSQL/Supabase role tests remain unverified because local Supabase/Docker could not start in this sandbox; no production migration was applied. P0 findings remain OPEN pending real isolated-role verification.

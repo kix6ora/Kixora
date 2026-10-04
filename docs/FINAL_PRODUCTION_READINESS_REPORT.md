@@ -3,11 +3,11 @@
 **Assessment date:** 2026-10-03  
 **Decision:** **NOT PRODUCTION READY**  
 **Overall score:** **15/100**, evidence-based readiness judgment, not code-quality grade.  
-**Scope:** main 7768759101f95ad4f1124d53a518a32c687e5e60, PR/staging head e142e1a98f7ca7cd3501393310cabc9f77e33a15, confirmed production Supabase, staging Supabase, connected Render workspace and latest observed GitHub CI. Only documentation was added to production-hardening.
+**Scope:** main 7768759101f95ad4f1124d53a518a32c687e5e60, PR/staging head e142e1a98f7ca7cd3501393310cabc9f77e33a15, confirmed production Supabase, staging Supabase, connected Render workspace and latest observed GitHub CI. The completion branch contains audit documentation and an initial P0 RPC/service-role hardening slice; it has not been applied to a live database or deployed.
 
 ## System status
 
-Do not release real-money checkout. P0 database mutation authorization findings remain; CI fails; observed staging deploys are down. No code, database, deployment or secret changes were made.
+Do not release real-money checkout. P0 database mutation authorization findings remain; CI fails; observed staging deploys are down. Code and regression checks have been added to production-hardening, but no database, deployment or secret changes were made.
 
 ## Scores
 
@@ -72,3 +72,8 @@ Scores reflect evidence and open blockers. Reassess after verified remediation.
 ## Recommendation
 
 Keep production configuration unchanged. Do not merge/deploy staging branch or enable live payments. Close P0/P1 database, XSS, deploy, CI and dependency findings; pass role/payment/order/inventory tests; reconcile production migrations; demonstrate staging health and rollback; prove restore/monitoring drills. Then request a separate go/no-go review.
+
+
+## Completion-work verification update (2026-10-04)
+
+Local on the writable source copy: build passed; lint/typecheck passed; Vitest passed **18 tests across 6 files**; in-memory migration/integrity validation passed for all 32 migration files. The build still warns about the 1.17 MB raw Three.js vendor chunk and CommonJS import.meta behavior. Local Playwright did not start under available Node 26.9 because the sandbox user-info lookup failed; intended CI is Node 22. The local Supabase gate skipped because Docker was unavailable. These results do not verify real PostgreSQL ACLs or close P0.

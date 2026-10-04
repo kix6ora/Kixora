@@ -4,7 +4,8 @@
 // replay attacks, and synchronizes atomic order & inventory states.
 // ==============================================================================
 
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { getSupabaseAdmin } from '../lib/supabaseAdmin';
 import { getPaymentDriver, PaymentProviderType, PaymentStatus } from './payments';
 import { webhookIdempotency } from './payments/webhookIdempotency';
 
@@ -202,8 +203,10 @@ export const webhookService = {
     }
 
     try {
-      // Find order by code or id
-      let query = supabase.from('orders').select('id, order_code, current_status, payment_status, payment_reference, total, currency');
+      // Webhook reconciliation must use the server-only key. Customer API
+      // credentials must never be able to perform payment state transitions.
+      const admin = getSupabaseAdmin();
+      let query = admin.from('orders').select('id, order_code, current_status, payment_status, payment_reference, total, currency');
       if (orderCode) {
         query = query.eq('order_code', orderCode);
       } else if (paymentIntentId) {
@@ -245,7 +248,7 @@ export const webhookService = {
         nextOrderStatus = 'Authenticated';
 
         // Use Atomic RPC for all state transitions to ensure concurrency safety
-        const { data: rpcData, error: rpcError } = await supabase.rpc('confirm_inventory_sale', { 
+        const { data: rpcData, error: rpcError } = await admin.rpc('confirm_inventory_sale', { 
           p_order_id: order.id,
           p_payment_reference: paymentIntentId || order.payment_reference 
         });
@@ -262,7 +265,7 @@ export const webhookService = {
         nextOrderStatus = 'Cancelled';
 
         // Use Atomic RPC for all state transitions
-        const { error: rpcError } = await supabase.rpc('release_order_reservations', { 
+        const { error: rpcError } = await admin.rpc('release_order_reservations', { 
           p_order_id: order.id,
           p_reason: `Payment ${newStatus} via ${provider.toUpperCase()} (Event: ${eventType})`
         });
@@ -278,7 +281,7 @@ export const webhookService = {
         nextOrderStatus = 'Cancelled';
 
         // 1. Update order row
-        await supabase
+        await admin
           .from('orders')
           .update({
             payment_status: 'refunded',
@@ -288,7 +291,7 @@ export const webhookService = {
           .eq('id', order.id);
 
         // 2. Insert order_status_history
-        await supabase.from('order_status_history').insert({
+        await admin.from('order_status_history').insert({
           order_id: order.id,
           status: 'Cancelled',
           notes: `Payment fully refunded via ${provider.toUpperCase()} (Event: ${eventType})`
@@ -306,3 +309,4 @@ export const webhookService = {
     }
   }
 };
+

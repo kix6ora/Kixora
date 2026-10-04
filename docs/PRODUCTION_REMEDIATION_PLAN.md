@@ -1,7 +1,7 @@
 # Kixora Production Remediation Plan
 
 **Baseline:** 2026-10-03 audit of main 7768759101f95ad4f1124d53a518a32c687e5e60, staging PR head e142e1a98f7ca7cd3501393310cabc9f77e33a15, confirmed Supabase production/staging metadata, Render staging and GitHub Actions.  
-**Status:** Every item is OPEN / NOT IMPLEMENTED. No code or infrastructure fixes were made.
+**Status:** All findings remain OPEN until acceptance tests pass. The first RPC hardening slice is implemented on production-hardening and locally verified; it has not been applied to a live database. No production or deployment changes were made.
 
 Severity: P0 production blocker/catastrophic; P1 critical; P2 high; P3 medium; P4 low.
 
@@ -36,3 +36,8 @@ Severity: P0 production blocker/catastrophic; P1 critical; P2 high; P3 medium; P
 5. **Go/no-go:** independent reviewer confirms no open P0/P1 and scores/evidence updated. This plan does not authorize production deployment.
 
 For each code finding preserve the chain: symptom → root cause → fix → regression test → verification. Do not delete or weaken tests to make CI green.
+
+
+## Completion-work status (2026-10-04)
+
+The branch contains migration 0032, a server-only Supabase admin client for webhooks, required production service-key validation, and a migration ACL regression test. Lint/typecheck, build, 18 unit tests and in-memory migration/integrity checks passed. DB-01, DB-02, DB-03 and INV-06 are still OPEN / IN PROGRESS: there has been no real PostgreSQL role matrix or live database application. All other findings remain OPEN / NOT IMPLEMENTED.

@@ -107,6 +107,23 @@ async function runDatabaseValidation() {
     const stmts = splitSqlStatements(sql);
     for (const stmt of stmts) {
       if (stmt.toLowerCase().startsWith('create extension')) continue;
+      const normalizedStmt = stmt.replace(/\s+/g, ' ').trim();
+      if (/^(grant|revoke)\b/i.test(normalizedStmt)) {
+        // pgsql-ast-parser does not implement PostgreSQL GRANT/REVOKE syntax.
+        // Validate the statement form explicitly instead of failing on an
+        // unsupported grammar production or silently skipping arbitrary SQL.
+        if (!/^(grant|revoke)\s+[\w,\s]+\s+on\s+.+\s+(to|from)\s+[\w,\s]+$/i.test(normalizedStmt)) {
+          throw new Error(`Invalid GRANT/REVOKE statement in ${file}: ${normalizedStmt}`);
+        }
+        continue;
+      }
+      if (/^alter function\b/i.test(normalizedStmt)) {
+        // The parser does not support ALTER FUNCTION ... SET search_path.
+        if (!/^alter function\s+[\w.]+\s*\([\w\s,]*\)\s+set search_path\s*=\s*pg_catalog\s*,\s*public$/i.test(normalizedStmt)) {
+          throw new Error(`Unexpected ALTER FUNCTION statement in ${file}: ${normalizedStmt}`);
+        }
+        continue;
+      }
       try {
         parse(stmt);
       } catch (err: any) {
@@ -428,3 +445,4 @@ runDatabaseValidation().catch(err => {
   console.error('DATABASE VALIDATION FAILED:', err);
   process.exit(1);
 });
+

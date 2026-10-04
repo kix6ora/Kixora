@@ -113,6 +113,13 @@ export function validateProductionEnv(): ProductionEnvValidation {
   const errors: string[] = [];
   const provider = client.paymentProviderMode;
 
+  if (!client.supabaseUrl || !client.supabaseAnonKey) {
+    errors.push('VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required in production.');
+  }
+  if (!server.supabaseServiceRoleKey) {
+    errors.push('SUPABASE_SERVICE_ROLE_KEY is required for server-side commerce reconciliation.');
+  }
+
   if (provider !== 'payfast') {
     errors.push('VITE_PAYMENT_PROVIDER_MODE must be payfast in production.');
   }
@@ -182,3 +189,4 @@ export function isPaymentConfigured(): boolean {
   if (config.paymentProviderMode === 'payfast') return !!config.payfastMerchantId && !!config.payfastMerchantKey;
   throw new Error(`Payment configuration Error: Unsupported payment provider "${config.paymentProviderMode}".`);
 }
+
