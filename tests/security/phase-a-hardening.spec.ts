@@ -152,7 +152,7 @@ test.describe('Kixora Phase A: Security Hardening', () => {
       expect(response.status()).not.toBe(403);
     });
 
-    test('POST to /api/notifications with valid CSRF token is accepted', async ({ request }) => {
+    test('POST to /api/notifications requires an authenticated admin even with valid CSRF', async ({ request }) => {
       const tokenResponse = await request.get(`${baseURL}/api/csrf`);
       expect(tokenResponse.status()).toBe(200);
       const { csrfToken } = await tokenResponse.json();
@@ -173,7 +173,25 @@ test.describe('Kixora Phase A: Security Hardening', () => {
         },
       });
 
-      expect(response.status()).not.toBe(403);
+      expect(response.status()).toBe(401);
+    });
+
+    test('POST to /api/shipping/labels requires an authenticated admin even with valid CSRF', async ({ request }) => {
+      const tokenResponse = await request.get(`${baseURL}/api/csrf`);
+      const { csrfToken } = await tokenResponse.json();
+      const cookies = tokenResponse.headers()['set-cookie'] || '';
+      const csrfCookie = cookies.split(';')[0];
+
+      const response = await request.post(`${baseURL}/api/shipping/labels`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken,
+          'Cookie': csrfCookie,
+        },
+        data: { orderId: 'not-authorized' },
+      });
+
+      expect(response.status()).toBe(401);
     });
 
     test('CSRF token endpoint returns a valid token', async ({ request }) => {
@@ -329,3 +347,4 @@ test.describe('Kixora Phase A: Security Hardening', () => {
     });
   });
 });
+
