@@ -6,7 +6,7 @@ Master dependency-aware roadmap from the 2026-10-04 baseline. Status is evidence
 
 - [✓] Phase 0 — inspect repository, architecture, live DB/deployment evidence, baseline CI and local build/lint/unit baseline. Evidence and environment limitations recorded in BASELINE_STATUS.md and PRODUCTION_READINESS_AUDIT.md.
 - [~] Phase 1 — payment/RPC trust boundary. Authenticated admin/service-only cleanup; service-role webhook data access; no anonymous payment-confirm RPC. Migration and regression checks are included in production-hardening; remote Postgres/RLS validation remains required before closing.
-- [ ] Phase 2 — database/RLS and identity isolation.
+- [~] Phase 2 — database/RLS and identity isolation. Guest checkout cannot attach an unauthenticated order to an arbitrary account; email alone no longer authorizes guest order retrieval; legacy order RPC revoked. Full RLS role matrix, all SECURITY DEFINER grants/search paths, and forward migration execution remain open.
 - [ ] Phase 3 — auth lifecycle and admin/customer authorization.
 - [ ] Phase 4 — product/catalog, cart and server-authoritative checkout.
 - [ ] Phase 5 — PayFast, refunds, idempotency, inventory concurrency and order lifecycle.
@@ -21,13 +21,13 @@ Master dependency-aware roadmap from the 2026-10-04 baseline. Status is evidence
 
 **Evidence/files:** package.json and lock, src/, server.ts, supabase/migrations, tests/, scripts, .github/workflows, docs, live production/staging Supabase metadata and connected Render logs.
 
-**Baseline:** npm ci/build/lint succeeded; Vitest 17 pass using runner-based loader; Playwright could not start locally due OS user-info ENOMEM; remote PR suite 154 pass / 10 fail / 1 skipped; five high npm findings; local Supabase gate skipped because Docker unavailable; in-memory DB validation passes but is not live Postgres.
+**Baseline:** npm ci/build/lint succeeded; Vitest 18 pass on the previous hardening slice using runner-based loader; Playwright could not start locally due OS user-info ENOMEM; remote PR suite was 154 pass / 10 fail / 1 skipped; five high npm findings; local Supabase gate skipped because Docker unavailable; latest in-memory DB validation passed 33 migration files and commerce checks but is not live Postgres.
 
 **Exit:** baseline limitations recorded, current test/runtime/version/DB/deploy source snapshots identified, no previous-report claims substituted for new evidence. Baseline record: BASELINE_STATUS.md.
 
 ## Phase 1 — Payment and order RPC boundary (IN PROGRESS, P0)
 
-**Current state/problems:** confirm_inventory_sale and cleanup_stale_pending_orders are SECURITY DEFINER RPCs callable by anon/authenticated; release_order_reservations is public; webhookService used the anon client for trusted payment-state operations.
+**Current state/problems:** confirm_inventory_sale and cleanup_stale_pending_orders were callable by anon/authenticated; release_order_reservations was public; webhookService used the anon client for trusted payment-state operations. Migration 0032 and server-side webhook client address these paths, pending Node 22 CI and real Postgres role validation.
 
 **Dependencies/files:** server-only SUPABASE_SERVICE_ROLE_KEY, src/lib/supabaseAdmin.ts, src/services/webhookService.ts, src/config/env.ts, migrations 0032 onward, Supabase roles/PostgREST.
 
@@ -39,7 +39,7 @@ Master dependency-aware roadmap from the 2026-10-04 baseline. Status is evidence
 
 ## Phase 2 — Database schema, RLS and user identity (P1)
 
-**Current state/problems:** prod behind migrations; payment_reconciliation_logs RLS off; 17 anon-callable definer functions; mutable search paths; guest lookup accepts email as credential; guest RPCs trust p_user_id fallback; 17 unindexed-FK advisories.
+**Current state/problems:** prod behind migrations; payment_reconciliation_logs RLS off; 17 anon-callable definer functions; mutable search paths; guest lookup accepted email as credential; guest RPCs trusted p_user_id fallback; 17 unindexed-FK advisories. Migration 0033 addresses the guest credential and account-assignment paths; remaining grants, search paths, RLS, and migration-ledger work remain open.
 
 **Dependencies/files:** supabase/migrations/0001–0032, all public RPCs and policies, src/repositories/orderRepository.ts, guest order/tracking views.
 
