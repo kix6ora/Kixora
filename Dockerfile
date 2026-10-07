@@ -4,9 +4,9 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-# Install build dependencies
-COPY package*.json .
-RUN npm ci --omit=dev && npm install -g bun && bun install
+# Install ALL deps (dev + prod) needed for build
+COPY package*.json ./
+RUN npm ci
 
 # Copy source files
 COPY . .
@@ -18,13 +18,21 @@ RUN npm run build
 FROM node:22-slim AS runtime
 WORKDIR /app
 
-# Copy only production dependencies and built assets
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./package.json
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOST=0.0.0.0
 
-# Expose application port (adjust if needed)
+# Re-install ONLY production dependencies (separate layer for cache)
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy built artifacts from builder
+COPY --from=builder /app/dist ./dist
+
+# Security: run as non-root user
+RUN groupadd -r nodejs && useradd -r -g nodejs nodejs
+USER nodejs
+
 EXPOSE 3000
 
-# Start the server
 CMD ["node", "dist/server.cjs"]

@@ -23,11 +23,28 @@
 - Drops ON: adapter.loadDrops() → repository.getDrops() with fallback
 - Cart/Wishlist/Orders: repository sync only when user is authenticated; guest mode stays localStorage
 
-## Files changed in this pass
-- src/config/features.ts (already correct, defaults false)
-- src/context/StoreContext.tsx (wired adapter + feature flags for catalog/drops)
-- src/context/adapters/catalogAdapter.ts (already correct)
-- docs/PHASE3_FEATURE_FLAGS.md (this file)
+## Current local implementation status (2026-09-24)
+- `src/config/features.ts`: Supabase feature flags default to false.
+- `src/context/StoreContext.tsx`: catalog/drops reads and notification persistence route
+  through the catalog adapter; cart, wishlist, and order synchronization are gated by
+  their corresponding flags.
+- `scripts/playwright-server.ts`: local browser tests force placeholder Supabase
+  configuration and all Supabase feature flags off, preventing remote project access.
+- `src/context/adapters/catalogAdapter.ts`: catalog/drop operations check their flags.
+- `npm run lint` and `npx tsc --noEmit` passed after the test-target safety change.
+- The isolated all-flags-off customer regression passed (24 Playwright tests). It uses
+  placeholder Supabase configuration, local seed data, and mock payment mode.
 
-## Ready for next Phase 3 slice?
-Yes — catalog and drops read paths are gated. Cart/wishlist repository wiring exists but is deferred to next slice per scope limits. Build passes.
+## Verification and rollout status
+- The linked Supabase project is `Kixora-staging` (`gzxhgeudovbdpgbvzwoa`), and a
+  linked `supabase db push --dry-run` reported the remote database up to date through
+  migration `0027`.
+- Staging-backed feature-group verification remains incomplete. It requires approved
+  staging customer/admin test accounts and newly rotated staging client credentials;
+  do not reuse credentials exposed by prior CLI output.
+- No additional staging seed was applied in this pass. `01_catalog.sql` is already
+  represented by migration `0011`; `02_staging_demo_orders.sql` writes demo profiles
+  and orders and requires an explicit QA-data approval before execution.
+- Do not enable remote flags or change production flags until each staging group has
+  passed its targeted verification. No production migration, seed write, or flag
+  change is authorized here.

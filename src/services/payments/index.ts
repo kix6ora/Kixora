@@ -6,18 +6,15 @@
 import { getEnvConfig } from '../../config/env';
 import { PaymentGatewayDriver, PaymentProviderType } from './types';
 import { MockPaymentDriver } from './mockDriver';
-import { StripePaymentDriver } from './stripeDriver';
 import { PayFastPaymentDriver } from './payfastDriver';
 
 export * from './types';
 export * from './mockDriver';
-export * from './stripeDriver';
 export * from './payfastDriver';
 
 // Singleton registry of drivers
 const drivers: Partial<Record<PaymentProviderType, PaymentGatewayDriver>> = {
   mock: new MockPaymentDriver(),
-  stripe: new StripePaymentDriver(),
   payfast: new PayFastPaymentDriver(),
 };
 

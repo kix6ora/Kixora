@@ -19,6 +19,7 @@ export interface ProductHydratedRow {
   rating?: number | null;
   reviews_count?: number | null;
   sales_count?: number | null;
+  model_url?: string | null;
   is_vault_exclusive?: boolean | null;
   featured?: boolean | null;
   is_featured?: boolean | null;
@@ -107,6 +108,7 @@ export const mapProductRowToSneaker = (row: ProductHydratedRow): Sneaker => {
     details: row.details || undefined,
     tags: row.tags || undefined,
     image: primaryImage,
+    modelUrl: row.model_url || undefined,
     images: imageUrls.length > 0 ? imageUrls : [primaryImage],
     gallery: imageUrls.length > 0 ? imageUrls : [primaryImage],
     sizes: parsedSizes.length > 0 ? parsedSizes : [{ size: 9, stock: 5 }, { size: 10, stock: 5 }],

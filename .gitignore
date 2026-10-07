@@ -1,7 +1,9 @@
 node_modules/
 build/
 dist/
+.vite/
 coverage/
+.lighthouseci/
 .kilo/
 .DS_Store
 *.log
@@ -12,11 +14,11 @@ test-results/
 lint_results.json
 test_output.txt
 playwright_output.txt
-
-# --- Guard: stray artifacts from mistyped terminal / agent commands ---
-# A botched remote-heads command once created a file literally named
-# "-remote --heads fork develop", and a shell/pager mishap created files named
-# after SQL fragments (e.g. "elect p.proname,"). Never let these reach the repo.
-/-*
 lint_output.txt
 migration-drift-diff.txt
+artifacts/staging-item1/
+
+# Agent worktrees: `.kilo/worktrees/*` are full nested checkouts of this
+# repository. Committing them duplicates the whole tree into the repo.
+.kilo/
+playwright-report/

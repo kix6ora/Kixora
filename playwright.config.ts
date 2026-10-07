@@ -13,7 +13,9 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'on-first-retry',
-    reducedMotion: 'reduce',
+    contextOptions: {
+      reducedMotion: 'reduce',
+    },
   },
   webServer: {
     command: 'tsx scripts/playwright-server.ts',

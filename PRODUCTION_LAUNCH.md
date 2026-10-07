@@ -12,20 +12,19 @@
 | `VITE_SUPABASE_URL` | Client & Server | Supabase project API gateway URL | YES |
 | `VITE_SUPABASE_ANON_KEY` | Client & Server | Public read/write client key (enforced by RLS) | YES |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server Only | Internal server maintenance & migration runner | YES |
-| `STRIPE_SECRET_KEY` | Server Only | Stripe API secret key for payment intent processing | YES |
-| `STRIPE_WEBHOOK_SECRET` | Server Only | HMAC secret for verifying incoming Stripe webhooks | YES |
-| `PAYFAST_MERCHANT_ID` | Client & Server | PayFast merchant account identifier | YES |
-| `PAYFAST_MERCHANT_KEY` | Client & Server | PayFast merchant encryption key | YES |
+| `VITE_PAYFAST_MERCHANT_ID` | Client & Server | PayFast merchant account identifier | YES |
+| `VITE_PAYFAST_MERCHANT_KEY` | Client & Server | PayFast merchant key used to construct the checkout request | YES |
+| `VITE_PAYFAST_SANDBOX` | Client & Server | Use PayFast sandbox in staging; set `false` only for production | YES |
 | `PAYFAST_PASSPHRASE` | Server Only | Salt passphrase for MD5 ITN signature verification | YES |
-| `THE_COURIER_GUY_API_KEY` | Server Only | The Courier Guy REST API credentials | YES |
-| `SHIPPING_WEBHOOK_SECRET` | Server Only | HMAC-SHA256 secret for carrier webhook signatures | YES |
+| `THE_COURIER_GUY_API_KEY` | Server Only | The Courier Guy API credentials | YES |
+| `SHIPPING_WEBHOOK_SECRET` | Server Only | HMAC-SHA256 secret for The Courier Guy webhook signatures | YES |
 | `RESEND_API_KEY` | Server Only | Transactional email delivery service API key | YES |
 | `CUSTOMER_ORIGIN` | Server Only | Exact storefront origin | YES |
 | `ADMIN_ORIGIN` | Server Only | Exact admin origin; must differ from customer origin | YES |
 | `CORS_ALLOWED_ORIGINS` | Server Only | Comma-separated exact allowlist containing both origins | YES |
 
 ### Environment & Secrets Hygiene Rules
-1. **Zero Client Secrets**: No server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PAYFAST_PASSPHRASE`, `SHIPPING_WEBHOOK_SECRET`, `RESEND_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) are bundled into client-facing artifacts or prefixed with `VITE_`.
+1. **Zero Client Secrets**: No server secrets (`PAYFAST_PASSPHRASE`, `SHIPPING_WEBHOOK_SECRET`, `RESEND_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) are bundled into client-facing artifacts or prefixed with `VITE_`.
 2. **Server-Side Proxy**: All external mutations, payment initialization, carrier communication, and transactional emails execute strictly through `/api/*` routes.
 
 ---
@@ -87,9 +86,8 @@
 
 | Webhook Route | Provider | Signature Verification Method | Payload Parsing | Tolerance Window | Idempotency Key |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `/api/webhooks/stripe` | Stripe | HMAC-SHA256 (`Stripe-Signature: t=...,v1=...`) | Raw Buffer (`express.raw`) | 300 seconds (5 min) | `evt_id` |
 | `/api/webhooks/payfast`| PayFast | MD5 Hash (`data + passphrase`) | URL-encoded Raw Body | N/A (ITN sequence check) | `pf_payment_id` / `m_payment_id` |
-| `/api/webhooks/tracking`| Carrier (TCG/Logic) | HMAC-SHA256 (`x-kixora-signature`, `t=...,v1=...`) | Raw Buffer (`express.raw`) | 300 seconds (5 min) | `eventId` |
+| `/api/webhooks/tracking`| The Courier Guy | HMAC-SHA256 (`x-kixora-signature`, `t=...,v1=...`) | Raw Buffer (`express.raw`) | 300 seconds (5 min) | `eventId` |
 
 ### Core Security Guarantees:
 1. **Raw Body Integrity**: Signatures are evaluated directly against unmodified request byte buffers prior to JSON deserialization.
@@ -138,11 +136,11 @@ operator in the authoritative provider consoles before marking complete.
 ### Automated Smoke Test Checklist
 - **GET `/api/health`**: Returns HTTP 200 `{ status: 'ok', domain: 'kixora-production' }`.
 - **GET `/`**: Returns HTTP 200 with HTML title `Kixora | Authenticated Sneaker Vault`.
-- **POST `/api/shipping/rates`**: Must fail closed until an authenticated, supported carrier integration is configured.
-- **POST `/api/shipping/labels`**: Must fail closed until an authenticated, supported carrier integration is configured.
+- **POST `/api/shipping/rates`**: Must use The Courier Guy integration and fail closed if its production configuration is unavailable.
+- **POST `/api/shipping/labels`**: Must create a The Courier Guy waybill or fail closed if carrier configuration is unavailable.
 - **POST `/api/webhooks/tracking`**: Rejects missing/tampered signatures (HTTP 401); accepts valid HMAC signatures (HTTP 200).
-- **POST `/api/webhooks/stripe`**: Rejects missing/tampered signatures (HTTP 400); accepts valid signatures.
-- **POST `/api/webhooks/payfast`**: Rejects invalid MD5 checksums (HTTP 400); processes valid ITNs.
+- **POST `/api/webhooks/payfast`**: Rejects invalid MD5 checksums (HTTP 400); processes valid ITNs and reconciles the order.
+- The current The Courier Guy driver returns simulated rates, labels, and tracking; live carrier API integration and staging proof are required before these checks can be marked passed.
 
 ### Monitoring & Observability
 - **Error Tracking**: Monitor structured logs (`logger.error`) for unhandled exceptions or elevated 5xx rates.

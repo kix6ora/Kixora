@@ -21,7 +21,9 @@ export interface LogContext {
 }
 
 class ServerLogger {
-  private isProduction = process.env.NODE_ENV === 'production';
+  private isProduction = typeof process !== 'undefined'
+    ? process.env.NODE_ENV === 'production'
+    : (import.meta as any).env?.PROD === true;
 
   private log(level: LogLevel, message: string, context: LogContext = {}) {
     // Sanitize context
@@ -36,7 +38,11 @@ class ServerLogger {
 
     if (this.isProduction) {
       // Production: Structured JSON
-      process.stdout.write(JSON.stringify(logEntry) + '\n');
+      if (typeof process !== 'undefined') {
+        process.stdout.write(JSON.stringify(logEntry) + '\n');
+      } else {
+        console.log(JSON.stringify(logEntry));
+      }
     } else {
       // Development: Readable colorized (simulated)
       const color = level === LogLevel.ERROR ? '\x1b[31m' : level === LogLevel.WARN ? '\x1b[33m' : '\x1b[32m';

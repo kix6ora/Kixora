@@ -1,4 +1,4 @@
--- 0025_fulfillment_policies.sql
+-- 0027_fulfillment_policies.sql
 -- Drop existing admin policies (if any) and recreate them with correct distinct names.
 
 DROP POLICY IF EXISTS admin_full_access_locations ON public.fulfillment_locations;
@@ -17,4 +17,4 @@ DROP POLICY IF EXISTS admin_full_access_batches ON public.fulfillment_batches;
 CREATE POLICY admin_full_access_batches ON public.fulfillment_batches
   FOR ALL TO authenticated USING (public.is_admin());
 
--- End of 0025_fulfillment_policies.sql
+-- End of 0027_fulfillment_policies.sql

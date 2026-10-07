@@ -11,7 +11,7 @@
 
 ## Current state
 
-The storefront already has a dark UI, orange accent usage, hero copy (“BUILT FOR THE CULTURE”), product cards, cart/checkout, admin hub, Supabase schema, DAL repositories, and payment/shipping route stubs.
+The storefront already has a dark UI, orange accent usage, hero copy (“BUILT FOR THE CULTURE”), product cards, cart/checkout, admin hub, Supabase schema, DAL repositories, and payment/shipping route stubs. The selected production integrations are PayFast for payments and The Courier Guy for delivery.
 
 It is **not** production-ready and it does **not** yet match the design board exactly.
 
@@ -151,9 +151,8 @@ It is **not** production-ready and it does **not** yet match the design board ex
 
 **Work**
 
-- PayFast / Peach / Ozow for South Africa (ZAR, Instant EFT, cards, Capitec Pay).
-- Stripe for international cards.
-- Server-side webhook verification (Stripe HMAC, PayFast ITN).
+- PayFast as the sole payment provider (ZAR).
+- Server-side PayFast ITN verification and idempotent order reconciliation.
 - Atomic checkout (`place_order_atomic`) so stock cannot oversell.
 - Multi-currency display with ZAR as base.
 
@@ -215,14 +214,14 @@ It is **not** production-ready and it does **not** yet match the design board ex
 
 **Work**
 
-- Courier Guy / Shiplogic rates, labels, tracking webhooks.
-- Resend (or equivalent) order confirmation and shipping emails.
+- The Courier Guy rates, waybills, and tracking webhooks. The current carrier driver returns simulated data; direct API integration and staging proof are still required before launch.
+- Resend (or equivalent) order confirmation and Courier Guy shipping emails.
 - Returns request UI and status on order tracking.
 - Low-stock alerts in admin.
 
 **Exit criteria**
 
-- A paid order can generate a waybill and a tracking event.
+- A paid order can generate a verified The Courier Guy waybill and tracking event using the live carrier integration.
 - Customer receives confirmation email in staging.
 
 ---

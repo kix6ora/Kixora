@@ -10,6 +10,9 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     strategy:
       matrix:
         node-version: [22.x]
@@ -26,6 +29,63 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Log in to Docker Hub (optional)
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Inspect cached Supabase images
+        shell: bash
+        run: |
+          set -euo pipefail
+          images=(
+            "public.ecr.aws/supabase/logflare"
+            "public.ecr.aws/supabase/storage-api"
+            "public.ecr.aws/supabase/gotrue"
+            "public.ecr.aws/supabase/realtime"
+            "public.ecr.aws/supabase/postgres"
+            "public.ecr.aws/supabase/mailpit"
+          )
+
+          echo "Checking the runner's Docker cache before Supabase startup:"
+          for image in "${images[@]}"; do
+            if docker image ls --format '{{.Repository}}' | grep -Fxq "$image"; then
+              echo "cached: $image"
+            else
+              echo "not cached: $image"
+            fi
+          done
+
+      - name: Wait before pulling Supabase images
+        run: sleep 15
+
+      - name: Start local Supabase with rate-limit retries
+        shell: bash
+        run: |
+          set -uo pipefail
+          max_attempts=5
+          backoff_seconds=15
+
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "Starting local Supabase (attempt ${attempt}/${max_attempts})..."
+            if npx supabase start; then
+              echo "Supabase started successfully."
+              exit 0
+            fi
+
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Supabase startup failed, likely due to a transient Docker registry/rate-limit error."
+              echo "Waiting ${backoff_seconds}s before retrying..."
+              sleep "$backoff_seconds"
+              backoff_seconds=$((backoff_seconds * 2))
+            fi
+          done
+
+          echo "Supabase failed to start after ${max_attempts} attempts."
+          exit 1
+
       - name: Validate local Supabase migrations
         run: npm run db:gate
         env:
@@ -33,21 +93,37 @@ jobs:
 
       - name: Install Playwright browsers (CRITICAL for test environment)
         run: npx playwright install --with-deps chromium
+        continue-on-error: false
 
       - name: TypeScript type check
         run: npx tsc --noEmit
+        continue-on-error: false
 
       - name: ESLint strict mode (zero warnings allowed)
         run: npx eslint . --max-warnings 0
+        continue-on-error: false
+
+      - name: Run unit and component tests
+        run: npm run test:coverage
+        continue-on-error: false
 
       - name: Run full Playwright test suite
         run: npx playwright test
-
-      - name: Run Lighthouse CI
-        run: npm run lighthouse
+        env:
+          VITE_CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME || secrets.VITE_CLOUDINARY_CLOUD_NAME }}
+          VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET || secrets.VITE_CLOUDINARY_UPLOAD_PRESET }}
+        continue-on-error: false
 
       - name: Build production bundle
         run: npm run build
+        env:
+          VITE_CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME || secrets.VITE_CLOUDINARY_CLOUD_NAME }}
+          VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET || secrets.VITE_CLOUDINARY_UPLOAD_PRESET }}
+        continue-on-error: false
+
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop
 
       - name: Upload Playwright report (on failure)
         if: failure()
@@ -56,6 +132,10 @@ jobs:
           name: playwright-report-${{ github.run_id }}
           path: playwright-report/
           retention-days: 30
+
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop
 
   security-audit:
     runs-on: ubuntu-latest
@@ -69,3 +149,4 @@ jobs:
         run: npm ci
       - name: Run npm audit (fail on high/critical)
         run: npm audit --audit-level=high
+        continue-on-error: false

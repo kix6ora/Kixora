@@ -1,20 +1,19 @@
 import React, { useState } from 'react';
-import { useStore } from '../context/StoreContext';
+import { formatPrice, useStore } from '../context/StoreContext';
 import {
   ArrowRight,
   ShieldCheck,
   Truck,
   RotateCcw,
   Lock,
-  ShoppingBag,
   Mail,
   Check
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const Hero: React.FC = () => {
-  const { sneakers, addToCart, openSneakerModal, setFilters, showToast, setIsCartOpen } = useStore();
-  const [activeCardIndex, setActiveCardIndex] = useState(1); // Default to 3/4 perspective card
+  const { sneakers, openSneakerModal, setFilters, showToast } = useStore();
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterSubscribed, setNewsletterSubscribed] = useState(false);
 
@@ -25,20 +24,13 @@ export const Hero: React.FC = () => {
     brand: 'Jordan',
     category: 'High-Top',
     price: 2999,
-    images: [
-      'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-01.png',
-      'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-02.png',
-      'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/travis-scott-mocha-01.png',
-      'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/aj4-black-cat-01.png'
-    ]
+    image: 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-01.png',
+    images: ['https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-01.png']
   };
 
-  const angleViews = [
-    { title: 'Side Profile', image: heroSneaker.images[0] || 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-01.png' },
-    { title: '3/4 Dynamic View', image: heroSneaker.images[1] || 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-02.png' },
-    { title: 'Heel & Collar', image: heroSneaker.images[2] || 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/travis-scott-mocha-01.png' },
-    { title: 'Underside Sole', image: heroSneaker.images[3] || 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/aj4-black-cat-01.png' }
-  ];
+  const angleViews = (heroSneaker.images.length > 0 ? heroSneaker.images : [heroSneaker.image])
+    .slice(0, 4);
+  const activeImage = angleViews[activeCardIndex] || angleViews[0];
 
   const handleSubscribe = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +47,7 @@ export const Hero: React.FC = () => {
   };
 
   return (
-    <section className="relative w-full overflow-hidden bg-[#111111] pt-6 sm:pt-10 pb-12 border-b border-[#2C2C2C]">
+    <section id="homepage-hero" className="relative w-full overflow-hidden bg-[#111111] pt-6 sm:pt-10 pb-12 border-b border-[#2C2C2C]">
       {/* Background ambient lighting */}
       <div className="absolute top-1/4 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#FF7A00]/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute top-10 right-10 w-[400px] h-[400px] bg-orange-950/20 rounded-full blur-[120px] pointer-events-none" />
@@ -97,7 +89,7 @@ export const Hero: React.FC = () => {
             </div>
           </div>
 
-          {/* Center Column: 3D Centerpiece Showcase with Glowing Rock Platform */}
+          {/* Center Column: Sneaker centerpiece with glowing rock platform */}
           <div className="lg:col-span-4 flex items-center justify-center relative py-6 sm:py-10">
             {/* Glowing elliptical neon platform — multi-layer depth */}
             <div className="relative w-72 sm:w-80 lg:w-96 aspect-square flex items-center justify-center">
@@ -146,7 +138,7 @@ export const Hero: React.FC = () => {
                 onClick={() => openSneakerModal(heroSneaker)}
               >
                 <img
-                  src={angleViews[activeCardIndex].image}
+                  src={activeImage}
                   alt={heroSneaker.name}
                   className="w-72 sm:w-80 lg:w-96 object-contain drop-shadow-[0_28px_40px_rgba(0,0,0,0.95)] filter select-none transition-all duration-300"
                 />
@@ -154,75 +146,55 @@ export const Hero: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: 3D PRODUCT CARDS matching exact Reference Image layout */}
+          {/* Right Column: Product image selectors */}
           <div className="lg:col-span-4 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-[#FF7A00] font-mono text-xs font-bold tracking-widest uppercase">
-                3D PRODUCT CARDS
+                PRODUCT VIEWS
               </span>
             </div>
 
-            {/* 4 Angle Product Cards Grid matching reference image */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-2.5">
-              {angleViews.map((angle, idx) => {
+            <div className="grid grid-cols-2 gap-2.5">
+              {angleViews.map((image, idx) => {
                 const isActive = activeCardIndex === idx;
 
                 return (
-                  <motion.div
+                  <button
                     key={idx}
                     onMouseEnter={() => setActiveCardIndex(idx)}
                     onClick={() => setActiveCardIndex(idx)}
-                    whileHover={{ y: -3 }}
-                    className={`p-2.5 rounded-xl transition-all duration-200 cursor-pointer flex flex-col justify-between relative group ${isActive
+                    type="button"
+                    aria-label={`Preview view ${idx + 1} of ${heroSneaker.name}`}
+                    aria-pressed={isActive}
+                    className={`p-2.5 text-left rounded-xl transition-all duration-200 hover:-translate-y-[3px] cursor-pointer flex flex-col justify-between relative group ${isActive
                       ? 'bg-[#1E1E1E] border-2 border-[#FF7A00] shadow-lg shadow-[#FF7A00]/20'
                       : 'bg-[#181818] border border-[#2C2C2C] hover:border-[#444444]'
                       }`}
                   >
-                    {/* Sneaker Thumbnail */}
                     <div className="aspect-square w-full flex items-center justify-center p-1 relative overflow-hidden">
                       <img
-                        src={angle.image}
-                        alt={`Angle ${idx + 1}`}
+                        src={image}
+                        alt=""
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                       />
                     </div>
 
-                    {/* Metadata & Mini Price & Cart Button */}
                     <div className="space-y-1 pt-1.5 border-t border-[#262626]">
-                      <div className="text-[10px] font-bold text-white leading-tight line-clamp-1">
-                        Air Jordan 1 Retro
+                      <div className="text-[10px] font-bold text-white leading-tight line-clamp-2">
+                        {heroSneaker.name}
                       </div>
-                      <div className="text-[9px] text-[#888888] truncate">
-                        "Shattered Backboard"
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="font-mono text-[10px] font-bold text-[#F5F5F5]">
-                          R2,999.00
-                        </span>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addToCart(heroSneaker, 10, 1);
-                            setIsCartOpen(true);
-                          }}
-                          className="w-6 h-6 rounded-md bg-[#FF7A00] hover:bg-[#E56E00] text-black flex items-center justify-center shadow-md transition-colors"
-                          title="Add to Cart"
-                        >
-                          <ShoppingBag className="w-3 h-3 stroke-[2.5]" />
-                        </button>
-                      </div>
+                      <span className="block font-mono text-[10px] font-bold text-[#F5F5F5]">
+                        {formatPrice(heroSneaker.price)}
+                      </span>
                     </div>
-                  </motion.div>
+                  </button>
                 );
               })}
             </div>
 
-            {/* 3D Caption underneath matching reference image */}
             <div className="text-center pt-1">
               <span className="text-[11px] font-mono text-[#888888] tracking-wider">
-                Hover to rotate • 360° View • Premium 3D Experience
+                Select a view to preview this release
               </span>
             </div>
           </div>

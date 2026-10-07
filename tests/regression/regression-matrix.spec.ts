@@ -10,7 +10,7 @@ test.describe('Phase 1 Regression Matrix Tests', () => {
 
     // Click logo
     await page.getByRole('button', { name: /kixora/i }).first().click();
-    await expect(page.getByText(/built for the culture/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /built for the culture/i })).toBeVisible();
   });
 
   // C-15: Catalog Brand Filter

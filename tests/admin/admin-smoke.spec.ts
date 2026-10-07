@@ -4,7 +4,7 @@ test.describe('Admin Smoke Tests', () => {
 
   test('AS-01: Admin dashboard loads with key performance indicators', async ({ adminPage: page }) => {
     // Verify Dashboard welcome text
-    await expect(page.getByText(/welcome back, admin/i)).toBeVisible();
+    await expect(page.getByText(/Welcome back, Admin/i)).toBeVisible();
 
     // Verify key metric cards are displayed
     await expect(page.getByText(/total revenue/i).first()).toBeVisible();
@@ -97,7 +97,7 @@ test.describe('Admin Smoke Tests', () => {
     await backBtn.click();
 
     // Verify storefront is rendered
-    await expect(page.getByText(/built for the culture/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /built for the culture/i })).toBeVisible();
   });
 
 });

@@ -1,4 +1,4 @@
-import { newDb } from 'pg-mem';
+import { newDb, DataType } from 'pg-mem';
 import { parse } from 'pgsql-ast-parser';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -132,15 +132,15 @@ async function runDatabaseValidation() {
 
   db.public.registerFunction({
     name: 'gen_random_uuid',
-    returns: db.public.getType('uuid'),
+    returns: db.public.getType(DataType.uuid),
     implementation: () => crypto.randomUUID(),
     impure: true,
   });
 
   db.public.registerFunction({
     name: 'gen_random_bytes',
-    returns: db.public.getType('bytea'),
-    args: [db.public.getType('integer')],
+    returns: db.public.getType(DataType.bytea),
+    args: [db.public.getType(DataType.integer)],
     implementation: (count: number) => crypto.randomBytes(count),
     impure: true,
   });

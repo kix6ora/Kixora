@@ -5,8 +5,7 @@
 // ==============================================================================
 
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { getEnvConfig, getServerConfig } from '../../config/env';
+import { getSupabaseAdmin } from '../../lib/supabaseAdmin';
 
 export interface ProcessedWebhookRecord {
   eventId: string;
@@ -22,11 +21,9 @@ class WebhookIdempotencyRegistry {
   private inMemoryCache: Map<string, ProcessedWebhookRecord> = new Map();
   private maxCacheSize = 2000;
 
-  private getPersistenceClient(): SupabaseClient {
-    const clientConfig = getEnvConfig();
-    const serverConfig = getServerConfig();
-    if (typeof window === 'undefined' && serverConfig.supabaseServiceRoleKey) {
-      return createClient(clientConfig.supabaseUrl, serverConfig.supabaseServiceRoleKey);
+  private getPersistenceClient() {
+    if (typeof window === 'undefined') {
+      return getSupabaseAdmin();
     }
     return supabase;
   }
@@ -49,7 +46,7 @@ class WebhookIdempotencyRegistry {
     // Check Supabase if configured
     if (isSupabaseConfigured()) {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await this.getPersistenceClient()
           .from('webhook_events')
           .select('event_id')
           .eq('event_id', eventId)
@@ -96,12 +93,12 @@ class WebhookIdempotencyRegistry {
         });
 
         if (error) {
-          console.error('[WebhookIdempotency] Authoritative claim failed:', error);
+          throw new Error(`Authoritative webhook claim failed: ${error.message}`);
+        }
+        if (data === false) {
           return false;
         }
-        if (data !== true) {
-          return false;
-        }
+        if (data !== true) throw new Error('Authoritative webhook claim returned an invalid result.');
         this.inMemoryCache.set(key, {
           eventId,
           provider,
@@ -112,13 +109,12 @@ class WebhookIdempotencyRegistry {
         return true;
       } catch (err) {
         console.error('[WebhookIdempotency] Authoritative claim exception:', err);
-        return false;
+        throw err;
       }
     }
 
     if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
-      console.error('[WebhookIdempotency] Refusing non-persistent webhook processing in production.');
-      return false;
+      throw new Error('Persistent webhook idempotency is unavailable in production.');
     }
 
     // Development/test fallback only.

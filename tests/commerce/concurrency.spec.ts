@@ -1,14 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { webhookService } from '../../src/services/webhookService';
 import { webhookIdempotency } from '../../src/services/payments/webhookIdempotency';
-import { computeHmacSha256 } from '../../src/services/payments/crypto';
+import { generatePayFastSignature } from '../../src/services/payments/crypto';
 
-function signedStripeWebhook(payload: Record<string, unknown>) {
-  const secret = 'whsec_playwright_test';
-  const rawBody = JSON.stringify(payload);
-  const timestamp = Math.floor(Date.now() / 1000);
-  const signature = computeHmacSha256(`${timestamp}.${rawBody}`, secret);
-  return { rawBody, signatureHeader: `t=${timestamp},v1=${signature}`, secret };
+function signedPayFastWebhook(payload: Record<string, unknown>) {
+  const passphrase = 'playwright_payfast_test';
+  return { signature: generatePayFastSignature(payload, passphrase), passphrase };
 }
 
 test.describe('Commerce Concurrency & Idempotency Tests', () => {
@@ -18,24 +15,19 @@ test.describe('Commerce Concurrency & Idempotency Tests', () => {
   });
 
   test('CONC-01: Duplicate webhook processing is blocked by idempotency', async () => {
-    const eventId = 'evt_shared_123';
     const orderCode = 'KX-SHARED-123';
     
     const payload = {
-      id: eventId,
-      type: 'payment_intent.succeeded',
-      data: {
-        object: {
-          id: 'pi_shared_123',
-          metadata: { orderCode }
-        }
-      }
+      m_payment_id: orderCode,
+      pf_payment_id: 'pf_shared_123',
+      payment_status: 'COMPLETE',
+      amount_gross: '100.00',
     };
-    const signed = signedStripeWebhook(payload);
+    const signed = signedPayFastWebhook(payload);
 
     // First processing
     const res1 = await webhookService.processWebhook({
-      provider: 'stripe',
+      provider: 'payfast',
       payload,
       ...signed,
     });
@@ -44,7 +36,7 @@ test.describe('Commerce Concurrency & Idempotency Tests', () => {
 
     // Second processing (duplicate)
     const res2 = await webhookService.processWebhook({
-      provider: 'stripe',
+      provider: 'payfast',
       payload,
       ...signed,
     });

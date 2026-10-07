@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore, formatPrice } from '../context/StoreContext';
 import { SEO } from './SEO';
 import { 
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getOptimizedImageUrl } from '../lib/cloudinary';
+import Sneaker3DViewer, { preloadSneaker3DViewer } from './Sneaker3DViewer';
 
 export const ProductModal: React.FC = () => {
   const { 
@@ -28,16 +29,20 @@ export const ProductModal: React.FC = () => {
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomedSrc, setZoomedSrc] = useState('');
 
+  const openZoom = (src: string) => {
+    setZoomedSrc(src);
+    setIsZoomed(true);
+  };
+
+  useEffect(() => {
+    if (selectedSneaker) void preloadSneaker3DViewer();
+  }, [selectedSneaker]);
+
   if (!selectedSneaker) return null;
 
   const isWishlisted = wishlist.includes(selectedSneaker.id);
   const inStockSizes = selectedSneaker.sizes.filter(s => s.stock > 0);
   const isSoldOut = inStockSizes.length === 0;
-
-  const openZoom = (src: string) => {
-    setZoomedSrc(src);
-    setIsZoomed(true);
-  };
 
   const closeZoom = () => setIsZoomed(false);
 
@@ -118,6 +123,18 @@ export const ProductModal: React.FC = () => {
 
             {/* Main Interactive Angle Preview — click to zoom */}
             <div className="relative aspect-4/3 my-6 flex items-center justify-center">
+              {selectedSneaker.modelUrl ? (
+                <Sneaker3DViewer
+                  modelUrl={selectedSneaker.modelUrl}
+                  images={selectedSneaker.images}
+                  fallbackImage={selectedSneaker.image}
+                  name={selectedSneaker.name}
+                  autoRotate={false}
+                  onImageChange={setActiveImageIndex}
+                />
+              ) : (
+                <div className="absolute left-3 top-3 z-10 rounded bg-black/60 px-2 py-1 text-[10px] text-white/70">Turntable image preview · 3D asset needed</div>
+              )}
               <motion.img
                 key={activeImageIndex}
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -128,6 +145,7 @@ export const ProductModal: React.FC = () => {
                 referrerPolicy="no-referrer"
                 onClick={() => openZoom(getOptimizedImageUrl(selectedSneaker.images[activeImageIndex] || selectedSneaker.images[0] || selectedSneaker.image, { width: 1400, quality: 'auto' }))}
                 className="w-full h-full object-contain filter drop-shadow-[0_20px_25px_rgba(0,0,0,0.9)] cursor-zoom-in transition-transform duration-200 hover:scale-[1.03]"
+                style={{ opacity: selectedSneaker.modelUrl ? 0 : 1, pointerEvents: selectedSneaker.modelUrl ? 'none' : 'auto' }}
               />
 
               {/* Prev / Next Angle Arrows */}

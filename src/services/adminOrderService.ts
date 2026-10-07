@@ -44,8 +44,9 @@ export const adminOrderService = {
       }
 
       // 2. Query the gateway for latest status
-      const provider = order.payment_method.toLowerCase().includes('stripe') ? 'stripe' : 
-                       order.payment_method.toLowerCase().includes('payfast') ? 'payfast' : 'mock' as PaymentProviderType;
+      const provider: PaymentProviderType = order.payment_method.toLowerCase().includes('payfast')
+        ? 'payfast'
+        : 'mock';
       
       const verification = await paymentService.verifyPayment(order.payment_reference || order.id, provider);
 

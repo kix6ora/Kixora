@@ -8,8 +8,7 @@ import {
   ShippingLabelResult,
   CarrierTrackingResult,
 } from './carrierTypes';
-import { TheCourierGuyDriver, VaultExpressDriver } from './carrierDrivers';
-import { logger } from '../../../logger';
+import { TheCourierGuyDriver } from './carrierDrivers';
 
 export class ShippingService {
   private drivers: Map<CarrierProviderId, ShippingCarrierDriver> = new Map();
@@ -17,7 +16,6 @@ export class ShippingService {
 
   constructor() {
     this.registerDriver(new TheCourierGuyDriver());
-    this.registerDriver(new VaultExpressDriver());
   }
 
   registerDriver(driver: ShippingCarrierDriver) {
@@ -28,68 +26,45 @@ export class ShippingService {
     const id = providerId || this.defaultProvider;
     const driver = this.drivers.get(id);
     if (!driver) {
-      return this.drivers.get('vault_express') || new VaultExpressDriver();
+      throw new Error(`Unsupported shipping carrier: ${id}`);
     }
     return driver;
   }
 
-  private isProductionCarrierConfigured(): boolean {
-    const hasCourierKey = Boolean(process.env.THE_COURIER_GUY_API_KEY || process.env.SHIPLOGIC_API_KEY);
-    const hasWebhookSecret = Boolean(process.env.SHIPPING_WEBHOOK_SECRET);
-    return hasCourierKey || hasWebhookSecret;
-  }
-
   /**
-   * Calculates live and fallback shipping quotes across available couriers.
-   * If production credentials are absent, we degrade gracefully instead of crashing.
+   * Calculates live and fallback shipping quotes across available couriers
    */
   async calculateRates(request: ShippingRateRequest): Promise<ShippingRateQuote[]> {
-    const quotes: ShippingRateQuote[] = [];
-
-    if (process.env.NODE_ENV === 'production' && !this.isProductionCarrierConfigured()) {
-      logger.warn('[ShippingService] Production carrier auth unavailable; using fallback estimates.', {
-        totalValueZar: request.totalValueZar,
-        itemsCount: request.itemsCount,
-      });
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('The Courier Guy API integration is not implemented; production rates are unavailable.');
     }
+    const quotes: ShippingRateQuote[] = [];
 
     for (const driver of this.drivers.values()) {
       try {
         const driverQuotes = await driver.calculateRates(request);
         quotes.push(...driverQuotes);
-      } catch (err: any) {
-        logger.warn(`[ShippingService] Failed to get quotes from ${driver.providerName}`, {
-          error: err?.message || 'unknown_error',
-        });
+      } catch {
+        // Silently handle errors when carrier integration fails
       }
-    }
-
-    if (quotes.length === 0) {
-      const fallbackDriver = this.getDriver();
-      const fallbackQuotes = await fallbackDriver.calculateRates(request);
-      return fallbackQuotes;
     }
 
     return quotes;
   }
 
   /**
-   * Generates waybill label and registers the tracking record in Supabase.
-   * In production, this still succeeds in demo/degraded mode if carrier credentials are absent.
+   * Generates waybill label and registers the tracking record in Supabase
    */
   async createShipmentLabel(request: ShippingLabelRequest): Promise<ShippingLabelResult> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('The Courier Guy API integration is not implemented; production labels are unavailable.');
+    }
     const driver = this.getDriver(request.carrierId);
     const labelResult = await driver.generateLabel(request);
 
-    if (process.env.NODE_ENV === 'production' && !this.isProductionCarrierConfigured()) {
-      logger.warn('[ShippingService] Production carrier auth unavailable; generated degraded shipment label.', {
-        orderCode: request.orderCode,
-        carrier: labelResult.carrier,
-      });
-    }
-
     if (labelResult.success && isSupabaseConfigured() && request.orderId) {
       try {
+        // Upsert shipment record
         await supabase
           .from('shipments')
           .upsert({
@@ -104,6 +79,7 @@ export class ShippingService {
             estimated_delivery: labelResult.estimatedDeliveryDate,
           }, { onConflict: 'order_id' });
 
+        // Update orders table with quick-access courier tracking cache
         await supabase
           .from('orders')
           .update({
@@ -114,6 +90,7 @@ export class ShippingService {
           })
           .eq('id', request.orderId);
 
+        // Add milestone to order_status_history
         await supabase
           .from('order_status_history')
           .insert({
@@ -122,10 +99,9 @@ export class ShippingService {
             title: 'Waybill & Label Generated',
             description: `Shipment label generated with ${labelResult.carrier}. Tracking: ${labelResult.trackingNumber}`,
           });
-      } catch (dbErr: any) {
-        logger.warn('[ShippingService] Failed to persist shipment in Supabase', {
-          error: dbErr?.message || 'unknown_db_error',
-        });
+
+      } catch {
+        // Silently handle database errors
       }
     }
 
@@ -133,22 +109,23 @@ export class ShippingService {
   }
 
   /**
-   * Retrieves tracking history and status for a given tracking number.
-   * Production falls back to a seeded tracking record instead of failing the checkout.
+   * Retrieves tracking history and status for a given tracking number
    */
   async getTracking(trackingNumber: string, carrierId?: CarrierProviderId): Promise<CarrierTrackingResult> {
-    const driver = this.getDriver(carrierId);
-    try {
-      return await driver.getTracking(trackingNumber);
-    } catch (err: any) {
-      logger.warn('[ShippingService] Tracking lookup failed; generating fallback tracking payload', {
+    if (process.env.NODE_ENV === 'production') {
+      return {
         trackingNumber,
-        error: err?.message || 'unknown_error',
-      });
-
-      const fallbackCarrier = this.getDriver('the_courier_guy');
-      return fallbackCarrier.getTracking(trackingNumber);
+        carrier: 'The Courier Guy',
+        status: 'PENDING_PICKUP',
+        internalStatus: 'Pending',
+        origin: '',
+        destination: '',
+        events: [],
+        error: 'The Courier Guy API integration is not implemented; production tracking is unavailable.',
+      };
     }
+    const driver = this.getDriver(carrierId);
+    return driver.getTracking(trackingNumber);
   }
 }
 

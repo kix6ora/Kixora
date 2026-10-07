@@ -1,7 +1,7 @@
 // ==============================================================================
 // KIXORA PAYMENT ABSTRACTION SERVICE (Phase 3A & 3B)
 // Orchestrates payment intent initialization, verification, webhooks, and refunds
-// across concrete payment gateway drivers (Stripe, PayFast, Mock).
+// across concrete payment gateway drivers (PayFast and Mock).
 // ==============================================================================
 
 import { getEnvConfig } from '../config/env';

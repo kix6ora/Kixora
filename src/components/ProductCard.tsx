@@ -4,6 +4,7 @@ import { Sneaker } from '../types';
 import { ShoppingBag, Heart, Star } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getOptimizedImageUrl } from '../lib/cloudinary';
+import Sneaker3DViewer, { preloadSneaker3DViewer } from './Sneaker3DViewer';
 
 interface ProductCardProps {
   sneaker: Sneaker;
@@ -57,7 +58,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({ sneaker }) => {
         scale: isHovered ? 1.01 : 1,
       }}
       transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-      onMouseEnter={() => setIsHovered(true)}
+      onMouseEnter={() => {
+        setIsHovered(true);
+        void preloadSneaker3DViewer();
+      }}
       onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
       onClick={() => openSneakerModal(sneaker)}
@@ -107,6 +111,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ sneaker }) => {
 
       {/* Floating Sneaker Image with 3D Hover perspective */}
       <div className="relative aspect-4/3 my-3 flex items-center justify-center overflow-hidden p-2">
+        {isHovered ? (
+          <Sneaker3DViewer
+            compact
+            modelUrl={sneaker.modelUrl}
+            images={sneaker.images}
+            fallbackImage={sneaker.image}
+            name={sneaker.name}
+            autoRotate
+          />
+        ) : null}
         <motion.img
           src={getOptimizedImageUrl(sneaker.images[currentImageIndex] || sneaker.images[0] || sneaker.image, { width: 600, quality: 'auto' })}
           alt={sneaker.name}
@@ -117,6 +131,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ sneaker }) => {
           }}
           transition={{ type: 'spring', stiffness: 220, damping: 15 }}
           className="w-full h-full object-contain filter drop-shadow-[0_15px_15px_rgba(0,0,0,0.8)] select-none"
+          style={{ opacity: isHovered && sneaker.modelUrl ? 0 : 1, pointerEvents: isHovered && sneaker.modelUrl ? 'none' : 'auto' }}
         />
 
         {/* 360 view indicator on hover */}

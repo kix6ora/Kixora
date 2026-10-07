@@ -1,10 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
-  computeHmacSha256,
   generatePayFastSignature,
-  verifyStripeSignature,
   verifyPayFastSignature,
-  timingSafeEqual
 } from '../../src/services/payments/crypto';
 import { webhookIdempotency } from '../../src/services/payments/webhookIdempotency';
 import { webhookService } from '../../src/services/webhookService';
@@ -16,74 +13,10 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
     webhookIdempotency.clearRegistry();
   });
 
-  test('WH-01: Stripe HMAC-SHA256 signature verification accepts valid signatures and rejects invalid/tampered payloads', async () => {
-    const webhookSecret = 'whsec_test_kixora_secret_key_12345';
-    const payload = JSON.stringify({
-      id: 'evt_stripe_test_001',
-      type: 'payment_intent.succeeded',
-      data: {
-        object: {
-          id: 'pi_test_001',
-          amount_received: 420000,
-          currency: 'zar',
-          metadata: { orderCode: 'KX-TEST-001' }
-        }
-      }
-    });
-
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signedPayload = `${timestamp}.${payload}`;
-    const validSignature = computeHmacSha256(signedPayload, webhookSecret);
-    const signatureHeader = `t=${timestamp},v1=${validSignature}`;
-
-    // 1. Verify valid signature
-    const validResult = verifyStripeSignature(payload, signatureHeader, webhookSecret);
-    expect(validResult.valid).toBe(true);
-    expect(validResult.error).toBeUndefined();
-
-    // 2. Reject tampered payload with unchanged signature
-    const tamperedPayload = JSON.stringify({ ...JSON.parse(payload), tampered: true });
-    const tamperedResult = verifyStripeSignature(tamperedPayload, signatureHeader, webhookSecret);
-    expect(tamperedResult.valid).toBe(false);
-    expect(tamperedResult.error).toBeDefined();
-
-    // 3. Reject wrong secret
-    const wrongSecretResult = verifyStripeSignature(payload, signatureHeader, 'whsec_wrong_secret');
-    expect(wrongSecretResult.valid).toBe(false);
-
-    // 4. Timing-safe equality check
-    expect(timingSafeEqual('abcdef', 'abcdef')).toBe(true);
-    expect(timingSafeEqual('abcdef', 'abcdeg')).toBe(false);
-    expect(timingSafeEqual('abcdef', 'short')).toBe(false);
-  });
-
-  test('WH-02: Stripe signature verification enforces timestamp tolerance against replay attacks', async () => {
-    const webhookSecret = 'whsec_test_replay_key';
-    const payload = JSON.stringify({ id: 'evt_replay_test', type: 'payment_intent.succeeded' });
-
-    // Timestamp 10 minutes (600s) in the past (exceeds default tolerance 300s)
-    const oldTimestamp = Math.floor(Date.now() / 1000) - 600;
-    const oldSignature = computeHmacSha256(`${oldTimestamp}.${payload}`, webhookSecret);
-    const oldHeader = `t=${oldTimestamp},v1=${oldSignature}`;
-
-    // Replay attempt with expired timestamp must be rejected
-    const replayResult = verifyStripeSignature(payload, oldHeader, webhookSecret, 300);
-    expect(replayResult.valid).toBe(false);
-    expect(replayResult.error).toContain('outside the tolerance window');
-
-    // Fresh timestamp within 60 seconds must pass
-    const freshTimestamp = Math.floor(Date.now() / 1000) - 30;
-    const freshSignature = computeHmacSha256(`${freshTimestamp}.${payload}`, webhookSecret);
-    const freshHeader = `t=${freshTimestamp},v1=${freshSignature}`;
-
-    const freshResult = verifyStripeSignature(payload, freshHeader, webhookSecret, 300);
-    expect(freshResult.valid).toBe(true);
-  });
-
   test('WH-03: PayFast ITN MD5 signature verification validates correct parameter hashes with passphrase', async () => {
     const passphrase = 'kixora_secure_passphrase';
     const itnData: Record<string, string> = {
-      m_payment_id: 'pf_1700000000_KX-8899',
+      m_payment_id: 'KX-8899',
       pf_payment_id: '1234567',
       payment_status: 'COMPLETE',
       item_name: 'Kixora Vault Order #KX-8899',
@@ -117,8 +50,8 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
   });
 
   test('WH-04: Webhook idempotency registry blocks duplicate event execution', async () => {
-    const eventId = 'evt_idempotency_unique_9988';
-    const provider = 'stripe';
+    const eventId = 'pf_idempotency_test:COMPLETE';
+    const provider = 'payfast';
 
     // 1. Initially not processed
     expect(await webhookIdempotency.isEventProcessed(eventId, provider)).toBe(false);
@@ -127,7 +60,7 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
     await webhookIdempotency.recordEventProcessed({
       eventId,
       provider,
-      eventType: 'payment_intent.succeeded',
+      eventType: 'payfast.itn.complete',
       orderCode: 'KX-9988',
       status: 'processed'
     });
@@ -137,26 +70,19 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
 
     // 4. Webhook service processWebhook returns idempotent flag on second call
     const payload = {
-      id: eventId,
-      type: 'payment_intent.succeeded',
-      data: {
-        object: {
-          id: 'pi_idempotency_test',
-          metadata: { orderCode: 'KX-9988' }
-        }
-      }
+      m_payment_id: 'KX-9988',
+      pf_payment_id: 'pf_idempotency_test',
+      payment_status: 'COMPLETE',
+      amount_gross: '100.00',
     };
-    const duplicateRawBody = JSON.stringify(payload);
-    const duplicateTimestamp = Math.floor(Date.now() / 1000);
-    const duplicateSecret = 'whsec_idempotency_test';
-    const duplicateSignature = computeHmacSha256(`${duplicateTimestamp}.${duplicateRawBody}`, duplicateSecret);
+    const duplicateSecret = 'payfast_idempotency_test';
+    const duplicateSignature = generatePayFastSignature(payload, duplicateSecret);
 
     const duplicateRes = await webhookService.processWebhook({
-      provider: 'stripe',
+      provider: 'payfast',
       payload,
-      rawBody: duplicateRawBody,
-      signatureHeader: `t=${duplicateTimestamp},v1=${duplicateSignature}`,
-      secret: duplicateSecret,
+      signature: duplicateSignature,
+      passphrase: duplicateSecret,
     });
 
     expect(duplicateRes.success).toBe(true);
@@ -165,32 +91,22 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
 
   test('WH-05: Webhook service reconciles payment success: marks order paid, authenticates grail, and confirms stock deduction', async () => {
     const orderCode = 'KX-WEBHOOK-PAID-01';
-    const rawBody = JSON.stringify({
-      id: 'evt_stripe_paid_001',
-      type: 'payment_intent.succeeded',
-      data: {
-        object: {
-          id: 'pi_paid_001',
-          amount_received: 550000,
-          currency: 'zar',
-          metadata: { orderCode }
-        }
-      }
-    });
-
-    const secret = 'whsec_kixora_webhook_suite';
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = computeHmacSha256(`${timestamp}.${rawBody}`, secret);
-    const signatureHeader = `t=${timestamp},v1=${signature}`;
-
-    const res = await webhookService.verifyAndProcessStripeWebhook(
-      rawBody,
-      signatureHeader,
-      secret
+    const payload = {
+      m_payment_id: orderCode,
+      pf_payment_id: 'pf_paid_001',
+      payment_status: 'COMPLETE',
+      custom_str1: orderCode,
+      amount_gross: '5500.00',
+    };
+    const passphrase = 'payfast_webhook_suite';
+    const res = await webhookService.verifyAndProcessPayFastWebhook(
+      payload,
+      generatePayFastSignature(payload, passphrase),
+      passphrase
     );
 
     expect(res.success).toBe(true);
-    expect(res.provider).toBe('stripe');
+    expect(res.provider).toBe('payfast');
     expect(res.orderCode).toBe(orderCode);
     expect(res.paymentStatus).toBe('paid');
     expect(res.orderStatus).toBe('Authenticated');
@@ -200,7 +116,7 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
   test('WH-06: Webhook service reconciles payment failure: marks order failed and releases reserved stock', async () => {
     const orderCode = 'KX-WEBHOOK-FAIL-01';
     const payload = {
-      m_payment_id: `pf_failed_${orderCode}`,
+      m_payment_id: orderCode,
       pf_payment_id: '998877',
       payment_status: 'FAILED',
       custom_str1: orderCode,
@@ -223,43 +139,10 @@ test.describe('Phase 3C: Payment Verification & Secure Webhook Handling', () => 
     expect(res.orderStatus).toBe('Cancelled');
   });
 
-  test('WH-07: Webhook service reconciles charge refund: marks order refunded and logs timeline audit', async () => {
-    const orderCode = 'KX-WEBHOOK-REFUND-01';
-    const rawBody = JSON.stringify({
-      id: 'evt_stripe_refund_001',
-      type: 'charge.refunded',
-      data: {
-        object: {
-          id: 'ch_refund_001',
-          payment_intent: 'pi_refund_001',
-          amount_refunded: 450000,
-          metadata: { orderCode }
-        }
-      }
-    });
-
-    const secret = 'whsec_refund_test';
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = computeHmacSha256(`${timestamp}.${rawBody}`, secret);
-    const signatureHeader = `t=${timestamp},v1=${signature}`;
-
-    const res = await webhookService.verifyAndProcessStripeWebhook(
-      rawBody,
-      signatureHeader,
-      secret
-    );
-
-    expect(res.success).toBe(true);
-    expect(res.provider).toBe('stripe');
-    expect(res.orderCode).toBe(orderCode);
-    expect(res.paymentStatus).toBe('refunded');
-    expect(res.orderStatus).toBe('Cancelled');
-  });
-
   test('WH-08: End-to-end webhook processing pipeline gracefully handles corrupted or unconfigured gateway requests', async () => {
     // 1. Corrupted JSON payload
     const corruptRes = await webhookService.processWebhook({
-      provider: 'stripe',
+      provider: 'payfast',
       payload: null as any,
       rawBody: 'NOT_VALID_JSON_%%%'
     });

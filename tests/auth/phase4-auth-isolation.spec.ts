@@ -127,11 +127,6 @@ test.describe('Phase 4: Real Authentication, Role Synchronization & Domain Isola
   });
 
   test('AUTH-05: Admin domain with admin role allows full access to Admin Hub', async ({ page }) => {
-    test.skip(
-      process.env.PLAYWRIGHT_USE_STAGING_SUPABASE === 'true',
-      'This test injects a mock session; staging admin access is covered by real sign-in tests.'
-    );
-
     // Navigate to admin domain with admin session
     await page.goto('/?domain=admin');
     await page.evaluate(() => {
@@ -161,11 +156,6 @@ test.describe('Phase 4: Real Authentication, Role Synchronization & Domain Isola
   });
 
   test('AUTH-06: Customer role on admin domain receives 403 Forbidden', async ({ page }) => {
-    test.skip(
-      process.env.PLAYWRIGHT_USE_STAGING_SUPABASE === 'true',
-      'This test injects a mock session; staging customer-role checks require a seeded staging user.'
-    );
-
     // Navigate to admin domain with customer credentials
     await page.goto('/?domain=admin');
     await page.evaluate(() => {
@@ -194,13 +184,7 @@ test.describe('Phase 4: Real Authentication, Role Synchronization & Domain Isola
     await expect(page.getByText(/403: access forbidden/i)).toBeVisible();
   });
 
-  test('AUTH-07: Unauthenticated user on admin domain sees Admin Authentication form and can log in', async ({ page }) => {
-    const useStagingSupabase = process.env.PLAYWRIGHT_USE_STAGING_SUPABASE === 'true';
-    test.skip(
-      process.env.CI === 'true' && !useStagingSupabase,
-      'Real admin login is skipped in CI until staging Supabase auth is configured.'
-    );
-
+  test('AUTH-07: Mock admin sign-in cannot elevate an unauthenticated user', async ({ page }) => {
     // Navigate to admin domain with no session
     await page.goto('/?domain=admin');
     await page.evaluate(() => {
@@ -218,16 +202,14 @@ test.describe('Phase 4: Real Authentication, Role Synchronization & Domain Isola
     await expect(page.getByText(/vault admin authentication/i)).toBeVisible();
 
     // Fill admin credentials
-    await page.getByPlaceholder('admin@kixora.com').fill(
-      useStagingSupabase ? process.env.PLAYWRIGHT_ADMIN_EMAIL! : 'admin@kixora.com'
-    );
-    await page.getByPlaceholder('••••••••••••').fill(
-      useStagingSupabase ? process.env.PLAYWRIGHT_ADMIN_PASSWORD! : 'StaffPassword123'
-    );
+    await page.getByPlaceholder('admin@kixora.com').fill('admin@kixora.com');
+    await page.getByPlaceholder('••••••••••••').fill('StaffPassword123');
     await page.getByRole('button', { name: /authenticate to admin console/i }).click();
 
-    // Verify successful login loads admin dashboard
-    await expect(page.locator('#admin-nav-dashboard')).toBeVisible();
+    // Mock authentication is customer-only; staff access requires an authoritative admin role.
+    await expect(page.locator('#admin-route-forbidden')).toBeVisible();
+    await expect(page.getByText(/403: access forbidden/i)).toBeVisible();
+    await expect(page.locator('#admin-nav-dashboard')).not.toBeVisible();
   });
 
 });

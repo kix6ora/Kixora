@@ -34,7 +34,7 @@ test.describe('Kixora Phase 6: Security Hardening & Rate Limiting', () => {
       data: 'x'.repeat(15 * 1024) // 15kb
     };
     
-    const response = await request.post('/api/payments/stripe/create-intent', {
+    const response = await request.post('/api/payments/payfast/initialize', {
       data: largePayload
     });
     

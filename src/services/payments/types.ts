@@ -3,7 +3,7 @@
 // Core types and interfaces for modular payment gateway drivers.
 // ==============================================================================
 
-export type PaymentProviderType = 'mock' | 'stripe' | 'payfast' | 'paypal';
+export type PaymentProviderType = 'mock' | 'payfast';
 export type PaymentStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'refunded' | 'cancelled';
 
 export interface PaymentIntentRequest {

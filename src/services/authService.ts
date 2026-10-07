@@ -8,6 +8,7 @@ import {
   SignInCredentials,
 } from '../types/auth';
 import { extractRoleFromUser, extractRoleFromAppMetadata } from '../utils/roleUtils';
+import { getPublicSiteUrl } from '../config/env';
 
 const MOCK_STORAGE_KEY = 'kixora_auth_session';
 let inMemorySession: AuthSession | null = null;
@@ -92,6 +93,7 @@ export const authService = {
           email,
           password,
           options: {
+            emailRedirectTo: getPublicSiteUrl(),
             data: {
               full_name: fullName,
               phone: phone || '',
@@ -181,24 +183,22 @@ export const authService = {
       return { user: null, session: null, error: 'Authentication service unavailable. Please try again later.' };
     }
 
-    // Mock fallback authentication: explicit staff credential is allowed,
-    // but generic admin-like emails (e.g. admin@foo.com) should never elevate.
-    const isExplicitAdminLogin = email.trim().toLowerCase() === 'admin@kixora.com' && password === 'StaffPassword123';
-    const role: UserRole = isExplicitAdminLogin ? 'admin' : 'customer';
+    // Local mock fallback: customer-only. Email content MUST NOT grant privileges.
+    const role: UserRole = 'customer';
 
     const mockUser: AuthUser = {
-      id: isExplicitAdminLogin ? 'admin-001' : `user-${Date.now()}`,
+      id: `user-${Date.now()}`,
       email,
       role,
-      fullName: isExplicitAdminLogin ? 'Vault Administrator' : 'Kixora Collector',
+      fullName: 'Kixora Collector',
       appMetadata: { role },
-      userMetadata: { full_name: isExplicitAdminLogin ? 'Vault Administrator' : 'Kixora Collector' },
+      userMetadata: { full_name: 'Kixora Collector' },
       createdAt: new Date().toISOString(),
     };
 
     const mockSession: AuthSession = {
       user: mockUser,
-      accessToken: `mock_jwt_${role}_${Date.now()}`,
+      accessToken: `mock_jwt_${Date.now()}`,
       expiresAt: Math.floor(Date.now() / 1000) + 86400,
     };
 

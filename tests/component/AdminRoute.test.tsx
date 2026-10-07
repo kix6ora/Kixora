@@ -4,20 +4,26 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminRoute } from '../../src/routes/AdminRoute';
 
-const mockSignIn = vi.fn();
-
 vi.mock('../../src/hooks/useAuth', () => ({
-  useAuth: () => ({
-    user: null,
-    role: 'anon',
-    isAdmin: false,
-    isLoading: false,
-    signIn: mockSignIn,
-  }),
+  useAuth: vi.fn(),
 }));
 
+import { useAuth } from '../../src/hooks/useAuth';
+
 describe('AdminRoute', () => {
+  let mockSignIn: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
+    mockSignIn = vi.fn();
+
+    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+      user: null,
+      role: 'anon',
+      isAdmin: false,
+      isLoading: false,
+      signIn: mockSignIn,
+    });
+
     mockSignIn.mockReset();
   });
 

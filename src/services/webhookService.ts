@@ -4,7 +4,8 @@
 // replay attacks, and synchronizes atomic order & inventory states.
 // ==============================================================================
 
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { getSupabaseAdmin } from '../lib/supabaseAdmin';
 import { getPaymentDriver, PaymentProviderType, PaymentStatus } from './payments';
 import { webhookIdempotency } from './payments/webhookIdempotency';
 
@@ -83,11 +84,18 @@ export const webhookService = {
       }
 
       // 2. Determine unique Event ID for idempotency
-      const eventId = input.eventIdOverride ||
-        (driverRes.gatewayMetadata?.stripeEventId) ||
-        (typeof payload === 'object' && payload?.id) ||
-        (typeof payload === 'object' && payload?.m_payment_id) ||
-        undefined;
+      const payfastStatus = typeof payload === 'object'
+        ? String(payload?.payment_status || '').toUpperCase()
+        : '';
+      const payfastPaymentId = typeof payload === 'object'
+        ? String(payload?.pf_payment_id || '')
+        : '';
+      const eventId = provider === 'payfast'
+        ? (payfastPaymentId && payfastStatus ? `${payfastPaymentId}:${payfastStatus}` : undefined)
+        : (input.eventIdOverride ||
+          ((typeof payload === 'object' && payload?.id) ||
+            (typeof payload === 'object' && payload?.m_payment_id) ||
+            undefined));
 
       if (!eventId) {
         return {
@@ -158,30 +166,6 @@ export const webhookService = {
   },
 
   /**
-   * Helper to verify and process Stripe webhooks with raw body and signature header.
-   */
-  async verifyAndProcessStripeWebhook(
-    rawBody: string,
-    signatureHeader: string,
-    secret?: string
-  ): Promise<WebhookReconciliationResult> {
-    let parsedPayload: any = null;
-    try {
-      parsedPayload = JSON.parse(rawBody);
-    } catch {
-      // Handled in driver
-    }
-
-    return this.processWebhook({
-      provider: 'stripe',
-      payload: parsedPayload,
-      rawBody,
-      signatureHeader,
-      secret
-    });
-  },
-
-  /**
    * Helper to verify and process PayFast ITN webhooks with payload and signature.
    */
   async verifyAndProcessPayFastWebhook(
@@ -228,7 +212,8 @@ export const webhookService = {
 
     try {
       // Find order by code or id
-      let query = supabase.from('orders').select('id, order_code, current_status, payment_status, payment_reference, total, currency');
+      const admin = getSupabaseAdmin();
+      let query = admin.from('orders').select('id, order_code, current_status, payment_status, payment_reference, total, currency');
       if (orderCode) {
         query = query.eq('order_code', orderCode);
       } else if (paymentIntentId) {
@@ -248,9 +233,7 @@ export const webhookService = {
       }
 
       if (newStatus === 'paid') {
-        const receivedAmount = provider === 'stripe'
-          ? gatewayMetadata?.amountReceived
-          : gatewayMetadata?.amountGross;
+        const receivedAmount = gatewayMetadata?.amountGross;
         if (typeof receivedAmount !== 'number' || !Number.isFinite(receivedAmount) ||
             Math.abs(receivedAmount - Number(order.total)) > 0.01) {
           return { success: false, error: 'Payment amount does not match the order total.' };
@@ -260,9 +243,15 @@ export const webhookService = {
         if (!receivedCurrency || receivedCurrency !== orderCurrency) {
           return { success: false, error: 'Payment currency does not match the order currency.' };
         }
-        if (order.payment_reference && paymentIntentId && order.payment_reference !== paymentIntentId) {
-          return { success: false, error: 'Payment reference does not match the order.' };
-        }
+      }
+
+      if (provider === 'payfast' && newStatus === 'cancelled') {
+        // Keep the pending reservation briefly so a later COMPLETE ITN can still settle this order.
+        return {
+          success: true,
+          orderStatus: order.current_status,
+          inventoryUpdated: false,
+        };
       }
 
       let nextOrderStatus = order.current_status;
@@ -272,7 +261,7 @@ export const webhookService = {
         nextOrderStatus = 'Authenticated';
 
         // Use Atomic RPC for all state transitions to ensure concurrency safety
-        const { data: rpcData, error: rpcError } = await supabase.rpc('confirm_inventory_sale', { 
+        const { data: rpcData, error: rpcError } = await admin.rpc('confirm_inventory_sale', {
           p_order_id: order.id,
           p_payment_reference: paymentIntentId || order.payment_reference 
         });
@@ -289,7 +278,7 @@ export const webhookService = {
         nextOrderStatus = 'Cancelled';
 
         // Use Atomic RPC for all state transitions
-        const { error: rpcError } = await supabase.rpc('release_order_reservations', { 
+        const { error: rpcError } = await admin.rpc('release_order_reservations', {
           p_order_id: order.id,
           p_reason: `Payment ${newStatus} via ${provider.toUpperCase()} (Event: ${eventType})`
         });
@@ -305,7 +294,7 @@ export const webhookService = {
         nextOrderStatus = 'Cancelled';
 
         // 1. Update order row
-        await supabase
+        await admin
           .from('orders')
           .update({
             payment_status: 'refunded',
@@ -315,7 +304,7 @@ export const webhookService = {
           .eq('id', order.id);
 
         // 2. Insert order_status_history
-        await supabase.from('order_status_history').insert({
+        await admin.from('order_status_history').insert({
           order_id: order.id,
           status: 'Cancelled',
           notes: `Payment fully refunded via ${provider.toUpperCase()} (Event: ${eventType})`

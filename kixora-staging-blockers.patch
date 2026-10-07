@@ -1,0 +1,831 @@
+diff --git a/docs/STAGING_VERIFICATION_RUNBOOK.md b/docs/STAGING_VERIFICATION_RUNBOOK.md
+new file mode 100644
+index 0000000..cf7ab07
+--- /dev/null
++++ b/docs/STAGING_VERIFICATION_RUNBOOK.md
+@@ -0,0 +1,63 @@
++# Staging verification runbook (Required item 1)
++
++Run these in order. Every script exits non-zero on failure and never prints secrets.
++
++## 0. Deploy
++Merge the branch, then redeploy BOTH Render services (customer and admin).
++VITE_* values are baked in at build time, so use a full redeploy, not a restart.
++
++## 1. Health  (blocker 1)
++    STAGING_CUSTOMER_URL=https://<customer>.onrender.com \
++    STAGING_ADMIN_URL=https://<admin>.onrender.com \
++    node scripts/staging/smoke.mjs
++
++Expected: `/api/health` returns 200 with `database: healthy` on both services.
++The probe reads the public `products` catalog as anon. It does not need, and must
++never be given, any access to `profiles`.
++
++If it still returns 503, the body names which check failed. A 42501 on `products`
++means migration 0031 (anon SELECT on the catalog) has not been applied to staging.
++
++## 2. Supabase Auth URLs  (blocker 2, manual)
++Supabase dashboard > Authentication > URL Configuration:
++- Site URL = customer URL
++- Redirect URLs = `https://<customer>.onrender.com/**` and `https://<admin>.onrender.com/**`
++Authentication > Sign In / Providers > Email: note whether "Confirm email" is on.
++
++## 3. Auth and admin separation  (blocker 2)
++Create two test users in Authentication > Users (a customer and an admin).
++Set the admin role in the SQL editor (not from the app), for example:
++
++    update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || '{"role":"admin"}'::jsonb
++    where email = '<admin test email>';
++
++Then:
++
++    STAGING_SUPABASE_URL=... STAGING_SUPABASE_ANON_KEY=... \
++    STAGING_CUSTOMER_EMAIL=... STAGING_CUSTOMER_PASSWORD=... \
++    STAGING_ADMIN_EMAIL=...    STAGING_ADMIN_PASSWORD=... \
++    node scripts/staging/auth-check.mjs --signup --try-escalation
++
++`smoke.mjs` already covers the UI side: the admin button exists only on the admin host,
++and a signed-out visitor gets the admin login, not the panel.
++Manual finish: in a browser, log in as the customer on the ADMIN site and confirm
++the admin panel stays closed; log in as the admin and confirm it opens.
++
++Admin URLs: the app is a single-page app with no /admin path. The admin host opens on
++the storefront view and the Admin button in the navbar switches to the admin view.
++
++## 4. Deployed bundle scan  (blocker 4)
++Export the same secret values you set on Render into your LOCAL shell (they are compared
++in memory only), then:
++
++    SUPABASE_SERVICE_ROLE_KEY=... PAYFAST_PASSPHRASE=... RESEND_API_KEY=... \
++    THE_COURIER_GUY_API_KEY=... SHIPPING_WEBHOOK_SECRET=... \
++    node scripts/staging/scan-deployed-bundles.mjs https://<customer>.onrender.com https://<admin>.onrender.com
++
++A value check that was not exported is reported as SKIPPED, never as passed.
++Also check in Render > each service > Environment: every server-only secret exists as a
++plain variable with NO `VITE_` prefix, and there is no `VITE_` twin of any of them.
++
++## 5. Sandbox checkout  (blocker 3)
++See the notes in the pull request: the current code does not redirect to PayFast, so this
++step needs the checkout change before it can pass.
+diff --git a/scripts/staging/auth-check.mjs b/scripts/staging/auth-check.mjs
+new file mode 100644
+index 0000000..1fe7dd4
+--- /dev/null
++++ b/scripts/staging/auth-check.mjs
+@@ -0,0 +1,161 @@
++#!/usr/bin/env node
++// Live boundary checks against the STAGING Supabase project, using only the anon key
++// and test-account logins. It never uses the service-role key.
++//
++//   STAGING_SUPABASE_URL=https://xxxx.supabase.co
++//   STAGING_SUPABASE_ANON_KEY=...                (the public anon key)
++//   STAGING_CUSTOMER_EMAIL / STAGING_CUSTOMER_PASSWORD   (a normal test customer)
++//   STAGING_ADMIN_EMAIL    / STAGING_ADMIN_PASSWORD      (a test admin, role set in the DB by you)
++//   node scripts/staging/auth-check.mjs [--signup] [--try-escalation]
++//
++// --signup           also creates a throwaway customer (email alias) and checks the profile trigger
++// --try-escalation   a customer attempts to set profiles.role='admin' on itself (must not stick)
++//
++// The RPC probes use arguments that cannot change data (random UUIDs, huge TTL).
++// Exit code 1 on any FAIL. Passwords and tokens are never printed.
++import { createClient } from '@supabase/supabase-js';
++import { randomUUID } from 'node:crypto';
++
++const env = (k) => process.env[k] || '';
++const URL_ = env('STAGING_SUPABASE_URL');
++const ANON = env('STAGING_SUPABASE_ANON_KEY');
++if (!URL_ || !ANON) {
++  console.error('Set STAGING_SUPABASE_URL and STAGING_SUPABASE_ANON_KEY.');
++  process.exit(2);
++}
++const wantSignup = process.argv.includes('--signup');
++const wantEscalation = process.argv.includes('--try-escalation');
++
++let fails = 0;
++const out = (level, label, detail = '') => {
++  if (level === 'FAIL') fails++;
++  console.log(`${level.padEnd(4)}  ${label}${detail ? '  -> ' + detail : ''}`);
++};
++const fresh = () => createClient(URL_, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
++
++const ZERO = '00000000-0000-0000-0000-000000000000';
++const rand = () => randomUUID();
++
++// Functions that must NOT be callable by anon or a normal customer.
++const LOCKED = [
++  ['admin_adjust_inventory', () => ({ p_product_size_id: rand(), p_stock_delta: 0, p_admin_id: ZERO })],
++  ['admin_transition_order_status', () => ({ p_order_id: rand(), p_new_status: 'Processing', p_title: 't', p_description: 'd', p_admin_id: ZERO })],
++  ['admin_reconcile_payment_state', () => ({ p_order_id: rand(), p_new_payment_status: 'paid', p_new_order_status: 'Processing', p_gateway_reference: 'authcheck', p_admin_id: ZERO, p_reason: 'authcheck' })],
++  ['confirm_inventory_sale', () => ({ p_order_id: rand(), p_payment_reference: 'authcheck' })],
++  ['release_order_reservations', () => ({ p_order_id: rand(), p_reason: 'authcheck' })],
++  // Huge TTL = matches no order, so this cannot cancel anything even if it runs.
++  ['cleanup_stale_pending_orders', () => ({ p_ttl_minutes: 2147483647 })],
++];
++
++// Classify the outcome of a call that SHOULD be blocked.
++function classify(error) {
++  if (!error) return 'EXECUTED';
++  const msg = `${error.code || ''} ${error.message || ''}`.toLowerCase();
++  if (error.code === '42501' || msg.includes('permission denied')) return 'REVOKED';
++  if (msg.includes('access denied') || msg.includes('admin privileges')) return 'GUARDED';
++  if (error.code === 'PGRST202' || msg.includes('could not find the function')) return 'NOT_FOUND';
++  return 'EXECUTED_WITH_ERROR';
++}
++
++async function probeLocked(client, who, allowGuarded) {
++  for (const [name, args] of LOCKED) {
++    const { error } = await client.rpc(name, args());
++    const c = classify(error);
++    if (c === 'REVOKED') out('PASS', `${who}: ${name} is revoked`);
++    else if (c === 'GUARDED') out(allowGuarded ? 'PASS' : 'WARN', `${who}: ${name} runs but its admin guard blocks it`, allowGuarded ? '' : 'prefer REVOKE so anon cannot even execute it');
++    else if (c === 'NOT_FOUND') out('FAIL', `${who}: ${name} not found by the API (signature mismatch or schema cache)`, error.message);
++    else out('FAIL', `${who}: ${name} EXECUTED (${c})`, error ? error.message : 'no error');
++  }
++}
++
++const SENSITIVE_TABLES = ['orders', 'order_items', 'profiles', 'admin_audit_logs', 'payment_reconciliation_logs', 'webhook_events', 'shipments', 'inventory_reservations'];
++const POLICY_TABLES = ['promo_codes', 'inventory', 'bespoke_designs', 'product_images', 'product_sizes'];
++
++async function probeTables(client, who, { ownIdColumn } = {}) {
++  for (const t of SENSITIVE_TABLES) {
++    const { data, error } = await client.from(t).select('*').limit(5);
++    if (error) out('PASS', `${who}: cannot read ${t}`, error.code || error.message);
++    else if (!data || data.length === 0) out('PASS', `${who}: ${t} returns no rows`);
++    else if (ownIdColumn && who.startsWith('customer') && ['orders', 'profiles'].includes(t)) {
++      const foreign = data.filter((r) => (ownIdColumn[t] ? r[ownIdColumn[t]] !== ownIdColumn.value : false));
++      out(foreign.length ? 'FAIL' : 'PASS', `${who}: ${t} rows are all the caller's own`, foreign.length ? `${foreign.length} foreign rows` : `${data.length} own row(s)`);
++    } else out('FAIL', `${who}: can read ${data.length} row(s) of ${t}`);
++  }
++  for (const t of POLICY_TABLES) {
++    const { data, error } = await client.from(t).select('*').limit(1000);
++    if (!error && data && data.length) out('WARN', `${who}: can read ${data.length} row(s) of ${t}`, 'owner decision: is this meant to be public?');
++  }
++}
++
++// ---------- anon ----------
++console.log('--- anonymous visitor ---');
++const anon = fresh();
++await probeLocked(anon, 'anon', false);
++await probeTables(anon, 'anon');
++
++// ---------- customer ----------
++console.log('\n--- signed-in customer ---');
++const cust = fresh();
++const cEmail = env('STAGING_CUSTOMER_EMAIL'), cPass = env('STAGING_CUSTOMER_PASSWORD');
++if (!cEmail || !cPass) {
++  out('FAIL', 'customer credentials not provided (STAGING_CUSTOMER_EMAIL / PASSWORD)');
++} else {
++  const { data, error } = await cust.auth.signInWithPassword({ email: cEmail, password: cPass });
++  if (error) out('FAIL', 'customer login', error.message);
++  else {
++    out('PASS', 'customer login works');
++    const role = data.user.app_metadata?.role;
++    out(role === 'admin' || role === 'super_admin' ? 'FAIL' : 'PASS', 'customer account has no admin role in app_metadata', `role=${role ?? 'none'}`);
++    await probeLocked(cust, 'customer', true);
++    await probeTables(cust, 'customer', { ownIdColumn: { value: data.user.id, orders: 'user_id', profiles: 'id' } });
++    if (wantEscalation) {
++      await cust.from('profiles').update({ role: 'admin' }).eq('id', data.user.id);
++      const re = fresh();
++      const { data: again } = await re.auth.signInWithPassword({ email: cEmail, password: cPass });
++      const { data: prof } = await re.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
++      const bad = ['admin', 'super_admin'].includes(again?.user?.app_metadata?.role) || ['admin', 'super_admin'].includes(prof?.role);
++      out(bad ? 'FAIL' : 'PASS', 'customer cannot promote itself to admin', `profile.role=${prof?.role ?? 'unreadable'}, app_metadata.role=${again?.user?.app_metadata?.role ?? 'none'}`);
++      if (bad) out('FAIL', 'ACTION NEEDED: reset this test account role in the Supabase SQL editor');
++    }
++  }
++}
++
++// ---------- sign-up ----------
++if (wantSignup) {
++  console.log('\n--- customer sign-up ---');
++  if (!cEmail.includes('@')) out('FAIL', 'need STAGING_CUSTOMER_EMAIL to derive an alias');
++  else {
++    const [u, d] = cEmail.split('@');
++    const alias = `${u.split('+')[0]}+kx${Date.now()}@${d}`;
++    const su = fresh();
++    const { data, error } = await su.auth.signUp({ email: alias, password: `Kx!${randomUUID().slice(0, 12)}` });
++    if (error) out('FAIL', 'sign-up request', error.message);
++    else if (!data.session) out('NOTE', 'sign-up accepted; email confirmation is ON, so no session yet', 'confirm the email, then log in to finish the check by hand');
++    else {
++      out('PASS', 'sign-up returned a session (email confirmation is OFF in this project)');
++      const { data: prof, error: pe } = await su.from('profiles').select('id, role').eq('id', data.user.id).maybeSingle();
++      out(prof ? 'PASS' : 'FAIL', 'profile row was created by the sign-up trigger', pe ? pe.message : `role=${prof?.role}`);
++    }
++  }
++}
++
++// ---------- admin ----------
++console.log('\n--- admin ---');
++const adm = fresh();
++const aEmail = env('STAGING_ADMIN_EMAIL'), aPass = env('STAGING_ADMIN_PASSWORD');
++if (!aEmail || !aPass) {
++  out('FAIL', 'admin credentials not provided (STAGING_ADMIN_EMAIL / PASSWORD)');
++} else {
++  const { data, error } = await adm.auth.signInWithPassword({ email: aEmail, password: aPass });
++  if (error) out('FAIL', 'admin login', error.message);
++  else {
++    const role = data.user.app_metadata?.role;
++    out(['admin', 'super_admin'].includes(role) ? 'PASS' : 'FAIL', 'admin account carries an admin role in app_metadata', `role=${role ?? 'none'}`);
++    const { error: e2 } = await adm.rpc('admin_transition_order_status', { p_order_id: rand(), p_new_status: 'Processing', p_title: 't', p_description: 'd', p_admin_id: data.user.id });
++    const c = classify(e2);
++    out(c === 'GUARDED' || c === 'REVOKED' ? 'FAIL' : 'PASS', 'admin passes the admin guard on admin_transition_order_status', e2 ? e2.message : 'no error');
++  }
++}
++
++console.log(fails ? `\nRESULT: FAIL (${fails})` : '\nRESULT: PASS');
++process.exit(fails ? 1 : 0);
+diff --git a/scripts/staging/scan-deployed-bundles.mjs b/scripts/staging/scan-deployed-bundles.mjs
+new file mode 100644
+index 0000000..7270ba2
+--- /dev/null
++++ b/scripts/staging/scan-deployed-bundles.mjs
+@@ -0,0 +1,182 @@
++#!/usr/bin/env node
++// Scan the frontend that Render is ACTUALLY SERVING for server-only secrets.
++//
++// Usage:
++//   node scripts/staging/scan-deployed-bundles.mjs https://customer.onrender.com https://admin.onrender.com
++//
++// To check secret VALUES, export the same values you set on Render into your
++// local shell first (they are only compared in memory and never printed):
++//   SUPABASE_SERVICE_ROLE_KEY PAYFAST_PASSPHRASE RESEND_API_KEY
++//   THE_COURIER_GUY_API_KEY SHIPPING_WEBHOOK_SECRET GEMINI_API_KEY
++//   (+ SCAN_EXTRA_SECRETS="value1,value2" for anything else)
++// If a variable is not exported, its value check is reported as SKIPPED, not passed.
++//
++// Exit code 1 on any FAIL.
++
++const SECRET_ENV_NAMES = [
++  'SUPABASE_SERVICE_ROLE_KEY',
++  'PAYFAST_PASSPHRASE',
++  'RESEND_API_KEY',
++  'THE_COURIER_GUY_API_KEY',
++  'SHIPPING_WEBHOOK_SECRET',
++  'GEMINI_API_KEY',
++];
++
++const MAX_FILES = 400;
++const results = [];
++const add = (level, url, rule, detail = '') => results.push({ level, url, rule, detail });
++
++const urls = process.argv.slice(2).filter((a) => /^https?:\/\//.test(a)).map((u) => u.replace(/\/+$/, ''));
++if (urls.length === 0) {
++  console.error('Pass at least one deployed base URL.');
++  process.exit(2);
++}
++
++const secretValues = new Map(); // name -> value
++const skipped = [];
++for (const name of SECRET_ENV_NAMES) {
++  const v = process.env[name];
++  if (v && v.trim().length >= 8) secretValues.set(name, v.trim());
++  else skipped.push(name);
++}
++(process.env.SCAN_EXTRA_SECRETS || '').split(',').map((s) => s.trim()).filter((s) => s.length >= 8)
++  .forEach((v, i) => secretValues.set(`EXTRA_${i + 1}`, v));
++
++async function get(url) {
++  try {
++    const res = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'kixora-bundle-scan/1.0' } });
++    const type = res.headers.get('content-type') || '';
++    const body = await res.text();
++    return { status: res.status, type, body };
++  } catch (e) {
++    return { status: 0, type: '', body: '', error: String(e.message || e) };
++  }
++}
++
++const looksLikeHtml = (r) => /text\/html/i.test(r.type) || /^\s*<!doctype html/i.test(r.body);
++
++function decodeJwtPayload(token) {
++  try {
++    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
++    return JSON.parse(Buffer.from(part, 'base64').toString('utf8'));
++  } catch {
++    return null;
++  }
++}
++
++function scanText(base, file, text) {
++  // 1) exact secret values
++  for (const [name, value] of secretValues) {
++    if (text.includes(value) || text.includes(encodeURIComponent(value))) {
++      add('FAIL', `${base}${file}`, 'secret value present', `${name} (value not shown)`);
++    }
++  }
++  // 2) JWTs
++  const jwtRe = /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g;
++  const seen = new Set();
++  for (const m of text.matchAll(jwtRe)) {
++    if (seen.has(m[0])) continue;
++    seen.add(m[0]);
++    const payload = decodeJwtPayload(m[0]);
++    const role = payload?.role;
++    if (role === 'service_role') add('FAIL', `${base}${file}`, 'service_role JWT in served file', 'role=service_role');
++    else if (role === 'anon') add('INFO', `${base}${file}`, 'anon JWT present (expected)', `project ref: ${payload.ref || 'n/a'}`);
++    else add('WARN', `${base}${file}`, 'unrecognised JWT in served file', `role=${role ?? 'none'}`);
++  }
++  // 3) new-style Supabase keys and other key shapes
++  const shapes = [
++    [/sb_secret_[A-Za-z0-9_-]{16,}/g, 'Supabase secret key (sb_secret_)', 'FAIL'],
++    [/sk_live_[A-Za-z0-9]{10,}/g, 'sk_live_ key', 'FAIL'],
++    [/sk_test_[A-Za-z0-9]{10,}/g, 'sk_test_ key', 'FAIL'],
++    [/\bre_[A-Za-z0-9]{20,}/g, 'Resend API key shape', 'FAIL'],
++    [/AIza[0-9A-Za-z_-]{35}/g, 'Google/Gemini API key shape', 'FAIL'],
++  ];
++  for (const [re, label, level] of shapes) {
++    if (re.test(text)) add(level, `${base}${file}`, label, 'pattern match (value not shown)');
++  }
++  // 4) server-only variable NAMES (not fatal, but should not be in browser code)
++  for (const name of SECRET_ENV_NAMES) {
++    if (text.includes(name)) add('WARN', `${base}${file}`, 'server-only variable NAME in served file', name);
++  }
++}
++
++function extractAssetPaths(text, fileUrl, base) {
++  const found = new Set();
++  const abs = /(?:src|href)=["']([^"']+)["']/g;
++  for (const m of text.matchAll(abs)) found.add(m[1]);
++  for (const m of text.matchAll(/assets\/[A-Za-z0-9_.\-]+\.(?:js|css|mjs)/g)) found.add('/' + m[0]);
++  for (const m of text.matchAll(/["'`](\.{1,2}\/[A-Za-z0-9_.\-/]+\.(?:js|css|mjs))["'`]/g)) found.add(m[1]);
++  const out = [];
++  for (const p of found) {
++    try {
++      const u = new URL(p, fileUrl);
++      if (u.origin === new URL(base).origin && /\.(js|css|mjs|json|webmanifest)$/i.test(u.pathname)) out.push(u.pathname);
++    } catch { /* ignore */ }
++  }
++  return out;
++}
++
++async function scanSite(base) {
++  const home = await get(`${base}/`);
++  if (home.status !== 200) {
++    add('FAIL', base, 'site not reachable', `HTTP ${home.status} ${home.error || ''}`.trim());
++    return;
++  }
++  add('INFO', base, 'home page fetched', `HTTP ${home.status}`);
++
++  const queue = [...new Set(extractAssetPaths(home.body, `${base}/`, base))];
++  const done = new Set();
++  const supabaseUrls = new Set();
++  const siteHosts = new Set();
++  let scanned = 0;
++
++  scanText(base, '/', home.body);
++
++  while (queue.length && scanned < MAX_FILES) {
++    const path = queue.shift();
++    if (done.has(path)) continue;
++    done.add(path);
++    const r = await get(`${base}${path}`);
++    if (r.status !== 200 || looksLikeHtml(r)) continue;
++    scanned++;
++    scanText(base, path, r.body);
++    for (const m of r.body.matchAll(/https?:\/\/([a-z0-9-]+\.supabase\.co)/gi)) supabaseUrls.add(m[1].toLowerCase());
++    for (const m of r.body.matchAll(/https?:\/\/([a-z0-9.-]+\.onrender\.com|[a-z0-9.-]+\.vercel\.app)/gi)) siteHosts.add(m[1].toLowerCase());
++    if (/\.(js|mjs)$/i.test(path)) {
++      for (const p of extractAssetPaths(r.body, `${base}${path}`, base)) if (!done.has(p)) queue.push(p);
++      // source map next to a JS file?
++      const map = await get(`${base}${path}.map`);
++      if (map.status === 200 && !looksLikeHtml(map)) add('FAIL', `${base}${path}.map`, 'source map is publicly served', 'exposes original source');
++    }
++  }
++  add('INFO', base, 'files scanned', String(scanned));
++
++  const realSupabase = [...supabaseUrls].filter((h) => h !== 'placeholder.supabase.co');
++  if (realSupabase.length === 0) {
++    add('FAIL', base, 'no real Supabase project URL baked into the build',
++      'Only the placeholder was found: VITE_SUPABASE_URL was not available at build time, so the storefront falls back to mock data.');
++  } else {
++    add('INFO', base, 'Supabase project host(s) baked in', realSupabase.join(', '));
++  }
++  if (siteHosts.size) add('INFO', base, 'site hostnames baked in (VITE_*_DOMAIN / ORIGIN)', [...siteHosts].join(', '));
++
++  // Files that must never be reachable
++  const probes = ['/server.cjs', '/server.cjs.map', '/dist/server.cjs', '/.env', '/.env.production', '/package.json', '/server.ts', '/src/config/env.ts', '/.git/config'];
++  for (const p of probes) {
++    const r = await get(`${base}${p}`);
++    if (r.status === 200 && !looksLikeHtml(r)) add('FAIL', `${base}${p}`, 'sensitive path is publicly served', `HTTP 200, ${r.type || 'no content-type'}`);
++  }
++}
++
++for (const base of urls) await scanSite(base);
++
++// Report
++const order = { FAIL: 0, WARN: 1, INFO: 2 };
++results.sort((a, b) => order[a.level] - order[b.level]);
++for (const r of results) console.log(`${r.level.padEnd(4)}  ${r.url}  ${r.rule}${r.detail ? '  -> ' + r.detail : ''}`);
++console.log('');
++if (skipped.length) console.log(`SKIPPED value checks (variable not exported locally): ${skipped.join(', ')}`);
++console.log(`Value checks ran for: ${[...secretValues.keys()].join(', ') || 'none'}`);
++const fails = results.filter((r) => r.level === 'FAIL').length;
++console.log(fails ? `RESULT: FAIL (${fails})` : 'RESULT: PASS (no FAIL findings)');
++process.exit(fails ? 1 : 0);
+diff --git a/scripts/staging/smoke.mjs b/scripts/staging/smoke.mjs
+new file mode 100644
+index 0000000..a725329
+--- /dev/null
++++ b/scripts/staging/smoke.mjs
+@@ -0,0 +1,129 @@
++#!/usr/bin/env node
++// Staging smoke test: health, readiness, CORS, exposed files, and admin/customer UI separation.
++//
++//   STAGING_CUSTOMER_URL=https://customer.onrender.com \
++//   STAGING_ADMIN_URL=https://admin.onrender.com \
++//   node scripts/staging/smoke.mjs            (add --no-browser to skip the UI checks)
++//
++// Local rehearsal over plain http: add --allow-http
++// Exit code 1 on any FAIL. Nothing secret is read or printed.
++
++const customer = (process.env.STAGING_CUSTOMER_URL || '').replace(/\/+$/, '');
++const admin = (process.env.STAGING_ADMIN_URL || '').replace(/\/+$/, '');
++const allowHttp = process.argv.includes('--allow-http');
++const useBrowser = !process.argv.includes('--no-browser');
++
++if (!customer || !admin) {
++  console.error('Set STAGING_CUSTOMER_URL and STAGING_ADMIN_URL.');
++  process.exit(2);
++}
++
++let fails = 0;
++const line = (ok, label, detail = '') => {
++  if (!ok) fails++;
++  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? '  -> ' + detail : ''}`);
++};
++const note = (label, detail = '') => console.log(`NOTE  ${label}${detail ? '  -> ' + detail : ''}`);
++
++async function req(url, init = {}) {
++  try {
++    const res = await fetch(url, { redirect: 'manual', ...init });
++    const text = await res.text();
++    return { res, text, status: res.status };
++  } catch (e) {
++    return { res: null, text: '', status: 0, error: String(e.message || e) };
++  }
++}
++
++// 1. URL sanity
++const cu = new URL(customer), au = new URL(admin);
++line(cu.host !== au.host, 'customer and admin hostnames are different', `${cu.host} vs ${au.host}`);
++if (!allowHttp) line(cu.protocol === 'https:' && au.protocol === 'https:', 'both URLs use https');
++
++// 2. Health + readiness on BOTH services
++for (const [name, base] of [['customer', customer], ['admin', admin]]) {
++  const h = await req(`${base}/api/health`);
++  let body = {};
++  try { body = JSON.parse(h.text); } catch { /* ignore */ }
++  line(h.status === 200 && body.status === 'ok' && body.checks?.database === 'healthy',
++    `${name}: /api/health is healthy`, `HTTP ${h.status} ${h.text.slice(0, 160)}`);
++
++  const r = await req(`${base}/api/ready`);
++  let rb = {};
++  try { rb = JSON.parse(r.text); } catch { /* ignore */ }
++  line(r.status === 200 && rb.checks?.configuration === true, `${name}: /api/ready reports configuration valid`, `HTTP ${r.status}`);
++  line(rb.checks?.serviceRoleConfigured === true, `${name}: service-role key present on the server (needed by the PayFast webhook)`);
++  line(rb.checks?.payfastWebhookConfigured === true, `${name}: PayFast passphrase configured`);
++}
++
++// 3. CORS behaviour (production allowlist returns 403 for unknown origins)
++const origins = [cu.origin, au.origin];
++for (const target of [customer, admin]) {
++  for (const o of origins) {
++    const r = await req(`${target}/api/csrf-token`, { headers: { Origin: o } });
++    const acao = r.res?.headers.get('access-control-allow-origin');
++    line(r.status === 200 && acao === o, `CORS: ${new URL(target).host} accepts origin ${o}`, `HTTP ${r.status}, ACAO=${acao}`);
++  }
++  const bad = await req(`${target}/api/csrf-token`, { headers: { Origin: 'https://evil.example' } });
++  const badAcao = bad.res?.headers.get('access-control-allow-origin');
++  line(bad.status === 403 && !badAcao, `CORS: ${new URL(target).host} rejects https://evil.example`, `HTTP ${bad.status}, ACAO=${badAcao}`);
++}
++
++// 4. Files that must not be served (SPA fallback returning index.html is fine)
++for (const base of [customer, admin]) {
++  for (const p of ['/server.cjs', '/server.cjs.map', '/.env', '/package.json']) {
++    const r = await req(`${base}${p}`);
++    const ct = r.res?.headers.get('content-type') || '';
++    const exposed = r.status === 200 && !/text\/html/i.test(ct);
++    line(r.status !== 0 && !exposed, `${new URL(base).host}${p} is not served`, r.status === 0 ? `could not reach host: ${r.error}` : `HTTP ${r.status} ${ct}`);
++  }
++}
++
++// 5. UI separation in a real browser
++if (useBrowser) {
++  let chromium;
++  try { ({ chromium } = await import('@playwright/test')); } catch { note('Playwright not installed; skipping UI checks'); }
++  if (chromium) {
++    let browser;
++    try {
++      browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
++    } catch (e) {
++      line(false, 'browser could not launch (run: npx playwright install chromium)', String(e.message).split('\n')[0]);
++    }
++    if (browser) try {
++      for (const [name, base] of [['customer', customer], ['admin', admin]]) {
++        const page = await browser.newPage();
++        const failed = [];
++        page.on('response', (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${new URL(r.url()).host}${new URL(r.url()).pathname}`); });
++        await page.goto(`${base}/`, { waitUntil: 'networkidle', timeout: 60000 }).catch(() => {});
++        const adminBtn = await page.locator('#header-admin-profile-button').count();
++        const userBtn = await page.locator('#header-user-button').count();
++        if (name === 'customer') {
++          line(adminBtn === 0 && userBtn > 0, 'customer host: no admin entry point in the navbar', `adminBtn=${adminBtn} userBtn=${userBtn}`);
++          // The app has no /admin URL path: it is a single-page app. A direct hit must still show no admin UI.
++          await page.goto(`${base}/admin`, { waitUntil: 'networkidle', timeout: 60000 }).catch(() => {});
++          const leaked = await page.locator('#admin-email, #admin-route-forbidden').count();
++          line(leaked === 0, 'customer host: /admin shows no admin login or admin panel', `found=${leaked}`);
++        } else {
++          line(adminBtn > 0, 'admin host: admin entry button is present (VITE_ADMIN_DOMAIN matches this hostname)', `adminBtn=${adminBtn}`);
++          if (adminBtn > 0) {
++            await page.locator('#header-admin-profile-button').click();
++            await page.waitForTimeout(800);
++            const gate = await page.locator('#admin-email').count();
++            line(gate > 0, 'admin host: signed-out visitor is shown the admin login, not the admin panel', `loginForm=${gate}`);
++          }
++          const storefront = await page.locator('#header-user-button').count();
++          note('admin host root renders the storefront first (the app always starts on the "store" view)', `customer-style user button present: ${storefront > 0}`);
++        }
++        const unique = [...new Set(failed)].slice(0, 12);
++        note(`${name}: network responses >= 400 while loading`, unique.length ? unique.join(' | ') : 'none');
++        await page.close();
++      }
++    } finally {
++      await browser.close();
++    }
++  }
++}
++
++console.log(fails ? `\nRESULT: FAIL (${fails})` : '\nRESULT: PASS');
++process.exit(fails ? 1 : 0);
+diff --git a/server.ts b/server.ts
+index d67a910..ab7d15a 100644
+--- a/server.ts
++++ b/server.ts
+@@ -13,6 +13,8 @@ import { emailService } from './src/services/email/emailService';
+ import { getEnvConfig, getServerConfig, validateProductionEnv } from './src/config/env';
+ import { logger } from './logger';
+ import { supabase, isSupabaseConfigured } from './src/lib/supabase';
++import { probeDatabase } from './src/services/healthService';
++import { hasServiceRoleKey } from './src/lib/supabaseAdmin';
+ 
+ /**
+  * Kixora Production Server (Express + Vite)
+@@ -283,14 +285,11 @@ async function startServer() {
+ 
+     // Check database connectivity if Supabase is configured
+     if (isSupabaseConfigured()) {
+-      try {
+-        const { error } = await supabase.from('profiles').select('id').limit(1);
+-        health.checks.database = error ? 'unhealthy' : 'healthy';
+-        health.checks.supabase = error ? 'unhealthy' : 'healthy';
+-      } catch {
+-        health.checks.database = 'unhealthy';
+-        health.checks.supabase = 'unhealthy';
+-      }
++      // Probe the public catalog (anon-readable by design). Never probe profiles:
++      // anon has no SELECT there and we must not grant it just for health.
++      const dbState = await probeDatabase(supabase);
++      health.checks.database = dbState;
++      health.checks.supabase = dbState;
+     } else {
+       health.checks.database = 'not_configured';
+       health.checks.supabase = 'not_configured';
+@@ -325,6 +324,7 @@ async function startServer() {
+         paymentProvider: clientConfig.paymentProviderMode,
+         payfastWebhookConfigured: Boolean(startupConfig.payfastPassphrase),
+         shippingWebhookConfigured: Boolean(startupConfig.shippingWebhookSecret),
++        serviceRoleConfigured: hasServiceRoleKey(),
+       },
+     });
+   });
+@@ -496,7 +496,15 @@ async function startServer() {
+   } else {
+     // Static file serving for production
+     const distPath = path.join(process.cwd(), 'dist');
+-    app.use(express.static(distPath));
++    // The server bundle (dist/server.cjs) and any source maps live inside dist/.
++    // They are not public assets: never serve them.
++    app.use((req, res, next) => {
++      if (/^\/server\.cjs(\.map)?$/i.test(req.path) || /\.map$/i.test(req.path)) {
++        return res.status(404).end();
++      }
++      next();
++    });
++    app.use(express.static(distPath, { dotfiles: 'ignore' }));
+     
+     // SPA Fallback
+     app.get('/{*splat}', (req, res) => {
+diff --git a/src/lib/supabaseAdmin.ts b/src/lib/supabaseAdmin.ts
+new file mode 100644
+index 0000000..49d4046
+--- /dev/null
++++ b/src/lib/supabaseAdmin.ts
+@@ -0,0 +1,40 @@
++// Server-only Supabase client that uses the service-role key.
++//
++// NEVER import this file from browser code. The key is read from process.env
++// at call time (not at import time) so it cannot be inlined into a Vite bundle,
++// and the function refuses to run if a `window` object exists.
++import { createClient, type SupabaseClient } from '@supabase/supabase-js';
++
++let cached: SupabaseClient | null = null;
++let cachedFor = '';
++
++export function hasServiceRoleKey(): boolean {
++  return typeof window === 'undefined' && Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
++}
++
++export function getServiceRoleClient(): SupabaseClient {
++  if (typeof window !== 'undefined') {
++    throw new Error('getServiceRoleClient() must never run in the browser.');
++  }
++
++  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
++  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
++  if (!url || !key) {
++    throw new Error('Service-role Supabase client is not configured (missing URL or SUPABASE_SERVICE_ROLE_KEY).');
++  }
++
++  const fingerprint = `${url}|${key.length}`;
++  if (!cached || cachedFor !== fingerprint) {
++    cached = createClient(url, key, {
++      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
++    });
++    cachedFor = fingerprint;
++  }
++  return cached;
++}
++
++/** Test helper: drop the cached client. */
++export function resetServiceRoleClientForTests(): void {
++  cached = null;
++  cachedFor = '';
++}
+diff --git a/src/services/healthService.ts b/src/services/healthService.ts
+new file mode 100644
+index 0000000..bff35b8
+--- /dev/null
++++ b/src/services/healthService.ts
+@@ -0,0 +1,20 @@
++// Database health probe used by GET /api/health.
++//
++// The probe deliberately reads the PUBLIC product catalog, which the anon role
++// is meant to read (migration 0031). It must never touch tables that anon is
++// not allowed to read (profiles, orders, ...) and must never be "fixed" by
++// granting anon extra access just to make health pass.
++import type { SupabaseClient } from '@supabase/supabase-js';
++
++export const HEALTH_PROBE_TABLE = 'products';
++
++export type DbHealth = 'healthy' | 'unhealthy';
++
++export async function probeDatabase(client: Pick<SupabaseClient, 'from'>): Promise<DbHealth> {
++  try {
++    const { error } = await client.from(HEALTH_PROBE_TABLE).select('id').limit(1);
++    return error ? 'unhealthy' : 'healthy';
++  } catch {
++    return 'unhealthy';
++  }
++}
+diff --git a/src/services/payments/webhookIdempotency.ts b/src/services/payments/webhookIdempotency.ts
+index a5acf2a..bee2b92 100644
+--- a/src/services/payments/webhookIdempotency.ts
++++ b/src/services/payments/webhookIdempotency.ts
+@@ -5,8 +5,8 @@
+ // ==============================================================================
+ 
+ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+-import { getEnvConfig, getServerConfig } from '../../config/env';
++import type { SupabaseClient } from '@supabase/supabase-js';
++import { getServiceRoleClient, hasServiceRoleKey } from '../../lib/supabaseAdmin';
+ 
+ export interface ProcessedWebhookRecord {
+   eventId: string;
+@@ -23,10 +23,8 @@ class WebhookIdempotencyRegistry {
+   private maxCacheSize = 2000;
+ 
+   private getPersistenceClient(): SupabaseClient {
+-    const clientConfig = getEnvConfig();
+-    const serverConfig = getServerConfig();
+-    if (typeof window === 'undefined' && serverConfig.supabaseServiceRoleKey) {
+-      return createClient(clientConfig.supabaseUrl, serverConfig.supabaseServiceRoleKey);
++    if (hasServiceRoleKey()) {
++      return getServiceRoleClient();
+     }
+     return supabase;
+   }
+diff --git a/src/services/webhookService.ts b/src/services/webhookService.ts
+index edeaab0..3cbac17 100644
+--- a/src/services/webhookService.ts
++++ b/src/services/webhookService.ts
+@@ -4,7 +4,8 @@
+ // replay attacks, and synchronizes atomic order & inventory states.
+ // ==============================================================================
+ 
+-import { supabase, isSupabaseConfigured } from '../lib/supabase';
++import { isSupabaseConfigured } from '../lib/supabase';
++import { getServiceRoleClient, hasServiceRoleKey } from '../lib/supabaseAdmin';
+ import { getPaymentDriver, PaymentProviderType, PaymentStatus } from './payments';
+ import { webhookIdempotency } from './payments/webhookIdempotency';
+ 
+@@ -201,7 +202,16 @@ export const webhookService = {
+       };
+     }
+ 
++    // Webhooks run on the server with no user session, so the anon client cannot
++    // read orders or call the locked-down inventory functions. Use the
++    // service-role client (server-only) for every database operation below.
++    if (!hasServiceRoleKey()) {
++      console.error('[webhookService.reconcileOrderState] SUPABASE_SERVICE_ROLE_KEY is not configured.');
++      return { success: false, error: 'Persistent order reconciliation is unavailable.' };
++    }
++
+     try {
++      const supabase = getServiceRoleClient();
+       // Find order by code or id
+       let query = supabase.from('orders').select('id, order_code, current_status, payment_status, payment_reference, total, currency');
+       if (orderCode) {
+diff --git a/tests/unit/healthService.test.ts b/tests/unit/healthService.test.ts
+new file mode 100644
+index 0000000..138c629
+--- /dev/null
++++ b/tests/unit/healthService.test.ts
+@@ -0,0 +1,34 @@
++import { describe, it, expect, vi } from 'vitest';
++import { probeDatabase, HEALTH_PROBE_TABLE } from '../../src/services/healthService';
++
++function fakeClient(result: { error: unknown } | 'throw') {
++  const limit = vi.fn(async () => {
++    if (result === 'throw') throw new Error('network down');
++    return result;
++  });
++  const select = vi.fn(() => ({ limit }));
++  const from = vi.fn(() => ({ select }));
++  return { client: { from } as any, from, select, limit };
++}
++
++describe('probeDatabase', () => {
++  it('probes the public catalog, never profiles', async () => {
++    const { client, from } = fakeClient({ error: null });
++    await probeDatabase(client);
++    expect(from).toHaveBeenCalledWith(HEALTH_PROBE_TABLE);
++    expect(HEALTH_PROBE_TABLE).toBe('products');
++    expect(from).not.toHaveBeenCalledWith('profiles');
++  });
++
++  it('reports healthy when the query succeeds (even with zero rows)', async () => {
++    expect(await probeDatabase(fakeClient({ error: null }).client)).toBe('healthy');
++  });
++
++  it('reports unhealthy on a permission or API error', async () => {
++    expect(await probeDatabase(fakeClient({ error: { code: '42501', message: 'permission denied' } }).client)).toBe('unhealthy');
++  });
++
++  it('reports unhealthy when the request throws', async () => {
++    expect(await probeDatabase(fakeClient('throw').client)).toBe('unhealthy');
++  });
++});
+diff --git a/tests/unit/supabaseAdmin.test.ts b/tests/unit/supabaseAdmin.test.ts
+new file mode 100644
+index 0000000..98e2797
+--- /dev/null
++++ b/tests/unit/supabaseAdmin.test.ts
+@@ -0,0 +1,36 @@
++import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
++import { getServiceRoleClient, hasServiceRoleKey, resetServiceRoleClientForTests } from '../../src/lib/supabaseAdmin';
++
++describe('supabaseAdmin (server-only service-role client)', () => {
++  const saved = { ...process.env };
++  beforeEach(() => resetServiceRoleClientForTests());
++  afterEach(() => {
++    process.env = { ...saved };
++    vi.unstubAllGlobals();
++  });
++
++  it('throws when the service-role key is missing', () => {
++    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
++    process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
++    vi.stubGlobal('window', undefined);
++    expect(hasServiceRoleKey()).toBe(false);
++    expect(() => getServiceRoleClient()).toThrow(/not configured/);
++  });
++
++  it('throws when a window object exists (browser)', () => {
++    process.env.SUPABASE_SERVICE_ROLE_KEY = 'x'.repeat(40);
++    process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
++    vi.stubGlobal('window', {});
++    expect(hasServiceRoleKey()).toBe(false);
++    expect(() => getServiceRoleClient()).toThrow(/browser/);
++  });
++
++  it('builds and caches a client on the server', () => {
++    process.env.SUPABASE_SERVICE_ROLE_KEY = 'x'.repeat(40);
++    process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
++    vi.stubGlobal('window', undefined);
++    const a = getServiceRoleClient();
++    const b = getServiceRoleClient();
++    expect(a).toBe(b);
++  });
++});
+

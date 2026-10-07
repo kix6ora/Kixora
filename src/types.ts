@@ -29,6 +29,8 @@ export interface Sneaker {
   originalPrice?: number;
   description: string;
   image: string;
+  /** Optional public GLB/GLTF URL (e.g. Cloudinary or Supabase Storage). */
+  modelUrl?: string;
   images: string[];
   gallery: string[];
   sizes: SneakerSize[];
@@ -93,6 +95,7 @@ export interface OrderCustomer {
 export interface Order {
   id: string;
   orderCode?: string;
+  guestAccessToken?: string;
   trackingNumber: string;
   createdAt: string;
   customer: OrderCustomer;

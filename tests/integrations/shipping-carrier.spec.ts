@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { shippingService } from '../../src/services/shipping/shippingService';
-import { TheCourierGuyDriver, VaultExpressDriver } from '../../src/services/shipping/carrierDrivers';
+import { TheCourierGuyDriver } from '../../src/services/shipping/carrierDrivers';
 import { ShippingRateRequest, ShippingLabelRequest } from '../../src/services/shipping/carrierTypes';
 
 test.describe('Phase 9: Shipping Carrier Integration', () => {
@@ -31,9 +31,6 @@ test.describe('Phase 9: Shipping Carrier Integration', () => {
     expect(tcgQuote?.rateZar).toBeGreaterThan(0);
     expect(tcgQuote?.currency).toBe('ZAR');
 
-    const vaultQuote = quotes.find(q => q.carrierId === 'vault_express');
-    expect(vaultQuote).toBeDefined();
-    expect(vaultQuote?.isInsured).toBe(true);
   });
 
   test('SHIP-02: Orders >= R2,000 qualify for free insured priority shipping', async () => {
@@ -72,29 +69,6 @@ test.describe('Phase 9: Shipping Carrier Integration', () => {
     expect(result.trackingNumber).toMatch(/^TCG\d+ZA$/);
     expect(result.trackingUrl).toContain('thecourierguy.co.za');
     expect(result.estimatedDeliveryDate).toBeDefined();
-  });
-
-  test('SHIP-04: Vault Express driver generates white-glove security tracking', async () => {
-    const driver = new VaultExpressDriver();
-    const labelReq: ShippingLabelRequest = {
-      orderId: 'ord-vault-002',
-      orderCode: 'KXO-9911',
-      recipient: sampleAddress,
-      itemsSummary: [
-        {
-          sku: 'NK-OFFWHT-CHIC',
-          name: 'Nike Air Jordan 1 Off-White Chicago',
-          sizeUs: 11,
-          quantity: 1,
-          valueZar: 85000,
-        },
-      ],
-    };
-
-    const result = await driver.generateLabel(labelReq);
-    expect(result.success).toBe(true);
-    expect(result.waybillId).toContain('KX-VLT-');
-    expect(result.trackingNumber).toMatch(/^KX-\d+-ZA$/);
   });
 
   test('SHIP-05: Tracking query returns chronologically ordered milestone scans', async () => {

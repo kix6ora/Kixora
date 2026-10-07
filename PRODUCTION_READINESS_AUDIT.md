@@ -2,11 +2,11 @@
 
 ## Executive summary
 
-Kixora is not production-ready yet.
+Kixora is materially strong as a mock-mode storefront and QA build, but it is not production-ready yet.
 
-The repository shows meaningful progress: the app architecture is coherent, the codebase includes production-hardening patterns, configuration abstractions exist, and a number of local validation tests pass. However, the audit requirement is stricter than “looks good in repo” or “passes local mocks.” Production readiness requires evidence from the real environment: real deployment configuration, real Supabase enforcement, real payment provider flows, and live role-boundary validation.
+The repository now shows meaningful evidence of production discipline: the app architecture is coherent, the security hardening patterns are in place, the mock-mode Playwright suite passes, and the codebase enforces safer auth boundaries than a typical demo app. However, production readiness requires proof in the live environment: real deployment configuration, real Supabase enforcement, real payment-provider flows, and live admin/customer isolation. Mock-mode validation proves the app behaves safely when external services are disabled, but it does not prove real-world production correctness.
 
-This audit is therefore a “not verified for production” decision until the real staging/prod environment proves the remaining items.
+This audit therefore remains a “not verified for production” decision until the real staging/prod environment demonstrates the remaining items.
 
 ---
 
@@ -25,7 +25,13 @@ This audit is therefore a “not verified for production” decision until the r
   - explicit CORS origin rules in [server.ts](server.ts)
   - CSRF protection setup in [server.ts](server.ts)
   - rate limiting in [server.ts](server.ts)
+  - strict role extraction from trusted app metadata in [src/utils/roleUtils.ts](src/utils/roleUtils.ts) and [src/services/authService.ts](src/services/authService.ts)
   - RLS and storage policy hardening in [supabase/migrations/0022_storage_setup.sql](supabase/migrations/0022_storage_setup.sql) and [supabase/migrations/0023_rls_hardening.sql](supabase/migrations/0023_rls_hardening.sql)
+
+- Mock-mode validation is complete and passing:
+  - Playwright mock-mode execution was run with the project’s safe server bootstrap and production-safe defaults
+  - the suite passed in controlled mock mode with no live Supabase or payment-provider dependency
+  - this is a strong sign that the app is operationally stable in QA and offline-safe scenarios
 
 - Local integration validation passed:
   - command run: `cd /workspaces/Kixora && npx playwright test tests/integrations --reporter=line`
@@ -35,7 +41,13 @@ This audit is therefore a “not verified for production” decision until the r
   - command run: `cd /workspaces/Kixora && npx playwright test tests/security/phase8-rls-penetration.spec.ts --reporter=line`
   - result: `6 passed (9.7s)`
 
-This indicates the code is in a materially better state and the repository has a meaningful set of protections.
+This indicates the codebase is in a materially better state and the repository contains meaningful production safeguards; however, this is not equivalent to production proof.
+
+### Fresh evidence since the Phase 8 mock-mode pass
+
+- The app intentionally fails closed in mock mode and avoids unintended live-service activation.
+- The Playwright suite validates the user-facing storefront, admin flows, auth boundaries, and security checks without live external services.
+- The mock-mode design is appropriate for staging confidence and regression protection, but it is a controlled environment boundary, not a release certificate.
 
 ---
 
@@ -92,7 +104,7 @@ Not verified:
 - refund processing
 
 Why:
-- payment drivers exist in [src/services/payments/payfastDriver.ts](src/services/payments/payfastDriver.ts) and [src/services/payments/stripeDriver.ts](src/services/payments/stripeDriver.ts)
+- PayFast is the selected payment provider; The Courier Guy is the selected carrier. Live staging validation remains outstanding.
 - but production verification is still missing
 - code alone is not sufficient proof
 
@@ -262,7 +274,7 @@ Suggested proof:
    - confirm storage restrictions
 
 4. Payment sandbox validation
-   - validate PayFast/Stripe provider flows end-to-end
+   - validate PayFast sandbox-to-production flows end-to-end
    - confirm webhook signature and duplicate handling
 
 5. Inventory concurrency validation

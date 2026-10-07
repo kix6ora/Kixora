@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^if command -v supabase >/dev/null 2>&1; then supabase --version; supabase db query --help \\| sed -n '1,100p'; else printf 'supabase CLI: unavailable\\\\n'; fi; printf '\\\\nAvailable auth/config variable names only:\\\\n'; env \\| cut -d= -f1 \\| grep -E 'SUPABASE\\|DATABASE\\|CLOUDINARY' \\| sort$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

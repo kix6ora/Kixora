@@ -4,7 +4,7 @@
 // ==============================================================================
 
 import { getEnvConfig, getServerConfig } from '../../config/env';
-import { generatePayFastSignature, verifyPayFastSignature } from './crypto';
+import { verifyPayFastSignature } from './crypto';
 import {
   PaymentGatewayDriver,
   PaymentProviderType,
@@ -21,9 +21,6 @@ import {
 export class PayFastPaymentDriver implements PaymentGatewayDriver {
   readonly provider: PaymentProviderType = 'payfast';
 
-  private readonly SANDBOX_URL = 'https://sandbox.payfast.co.za/eng/process';
-  private readonly LIVE_URL = 'https://www.payfast.co.za/eng/process';
-
   isConfigured(): boolean {
     const config = getEnvConfig();
     return !!config.payfastMerchantId && !!config.payfastMerchantKey;
@@ -32,11 +29,6 @@ export class PayFastPaymentDriver implements PaymentGatewayDriver {
   getPassphrase(): string {
     const config = getServerConfig();
     return config.payfastPassphrase || '';
-  }
-
-  getProcessUrl(): string {
-    const config = getEnvConfig();
-    return config.payfastSandbox ? this.SANDBOX_URL : this.LIVE_URL;
   }
 
   async createPaymentIntent(request: PaymentIntentRequest): Promise<PaymentIntentResponse> {
@@ -50,60 +42,12 @@ export class PayFastPaymentDriver implements PaymentGatewayDriver {
       };
     }
 
-    const config = getEnvConfig();
-    const merchantId = config.payfastMerchantId;
-    const merchantKey = config.payfastMerchantKey;
-    if (!merchantId || !merchantKey) {
-      return {
-        success: false,
-        provider: this.provider,
-        status: 'failed',
-        error: 'PayFast merchant credentials are required; payment was not initialized.',
-        errorCode: 'PAYFAST_NOT_CONFIGURED'
-      };
-    }
-
-    const paymentId = `pf_${Date.now()}_${request.orderCode}`;
-    const formattedAmount = Number(request.amount).toFixed(2);
-
-    const returnUrl = request.returnUrl || `${config.customerDomain}/order-confirmation?order=${request.orderCode}`;
-    const cancelUrl = request.cancelUrl || `${config.customerDomain}/checkout?cancel=true`;
-    const notifyUrl = `${config.customerDomain}/api/webhooks/payfast`;
-
-    const payfastData: Record<string, string> = {
-      merchant_id: merchantId,
-      merchant_key: merchantKey,
-      return_url: returnUrl,
-      cancel_url: cancelUrl,
-      notify_url: notifyUrl,
-      name_first: request.customerName || 'Kixora Collector',
-      email_address: request.customerEmail,
-      m_payment_id: paymentId,
-      amount: formattedAmount,
-      item_name: `Kixora Vault Order #${request.orderCode}`,
-      item_description: `Authentication & Courier for Order ${request.orderCode}`
-    };
-
-    // Calculate signature if passphrase is configured
-    const passphrase = this.getPassphrase();
-    const signature = generatePayFastSignature(payfastData, passphrase);
-    payfastData.signature = signature;
-
-    // Construct redirect URL with URL-encoded query parameters
-    const queryString = new URLSearchParams(payfastData).toString();
-    const redirectUrl = `${this.getProcessUrl()}?${queryString}`;
-
     return {
-      success: true,
+      success: false,
       provider: this.provider,
-      paymentIntentId: paymentId,
-      redirectUrl,
-      status: 'pending',
-      gatewayData: {
-        ...payfastData,
-        processUrl: this.getProcessUrl(),
-        isSandbox: config.payfastSandbox
-      }
+      status: 'failed',
+      error: 'PayFast checkout must be initialized by the server.',
+      errorCode: 'PAYFAST_SERVER_INITIATION_REQUIRED',
     };
   }
 
@@ -169,14 +113,9 @@ export class PayFastPaymentDriver implements PaymentGatewayDriver {
 
     const paymentStatus = (raw.payment_status || '').toUpperCase();
     const mPaymentId = raw.m_payment_id || '';
-    const pfPaymentId = raw.pf_payment_id || mPaymentId;
+    const pfPaymentId = raw.pf_payment_id || '';
 
-    // Extract orderCode from item_name or custom_str1 or m_payment_id
-    let orderCode = raw.custom_str1 || '';
-    if (!orderCode && mPaymentId.includes('_')) {
-      const parts = mPaymentId.split('_');
-      orderCode = parts[parts.length - 1];
-    }
+    const orderCode = mPaymentId;
 
     const gatewayMetadata = {
       pfPaymentId,
@@ -184,6 +123,7 @@ export class PayFastPaymentDriver implements PaymentGatewayDriver {
       amountGross: raw.amount_gross ? parseFloat(raw.amount_gross) : undefined,
       amountFee: raw.amount_fee ? parseFloat(raw.amount_fee) : undefined,
       amountNet: raw.amount_net ? parseFloat(raw.amount_net) : undefined,
+      currency: raw.currency || 'ZAR',
       paymentStatus
     };
 

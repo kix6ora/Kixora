@@ -9,7 +9,7 @@ import { logger } from '../../logger';
  * Cloudinary Environment-Aware Configuration
  */
 const env = getEnvConfig();
-export const CLOUDINARY_CLOUD_NAME = env.cloudinaryCloudName || 'kixora';
+export const CLOUDINARY_CLOUD_NAME = env.cloudinaryCloudName || 'vevnhwj6';
 export const CLOUDINARY_UPLOAD_PRESET = env.cloudinaryUploadPreset || 'kixora_product_images';
 
 /**
@@ -192,8 +192,8 @@ export async function uploadToCloudinary(
 
 // Validate Cloudinary configuration at runtime
 export function validateCloudinaryConfig(): void {
-  if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === 'kixora') {
-    logger.warn('[Cloudinary] Using default cloud name "kixora". Ensure VITE_CLOUDINARY_CLOUD_NAME is set in the environment.');
+  if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === 'vevnhwj6') {
+    logger.warn('[Cloudinary] Using default cloud name "vevnhwj6". Ensure VITE_CLOUDINARY_CLOUD_NAME is set in the environment.');
   }
   if (!CLOUDINARY_UPLOAD_PRESET || CLOUDINARY_UPLOAD_PRESET === 'kixora_product_images') {
     logger.warn('[Cloudinary] Using default upload preset "kixora_product_images". Ensure VITE_CLOUDINARY_UPLOAD_PRESET is set in the environment.');

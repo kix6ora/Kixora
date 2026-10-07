@@ -6,7 +6,8 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
 
 test.describe('Kixora Phase A: Security Hardening', () => {
-  const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3000';
+  const port = process.env.PLAYWRIGHT_PORT || '3000';
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`;
 
   async function csrfHeaders(request: APIRequestContext) {
     const tokenResponse = await request.get(`${baseURL}/api/csrf`);
@@ -24,7 +25,7 @@ test.describe('Kixora Phase A: Security Hardening', () => {
   // ---------------------------------------------------------------------------
   test.describe('CORS Allowlist', () => {
     test('Cross-origin request from disallowed origin is blocked (403)', async ({ request }) => {
-      const response = await request.post(`${baseURL}/api/payments/stripe/create-intent`, {
+      const response = await request.post(`${baseURL}/api/payments/payfast/initialize`, {
         headers: {
           'Content-Type': 'application/json',
           'Origin': 'https://evil.example.com',
@@ -44,8 +45,8 @@ test.describe('Kixora Phase A: Security Hardening', () => {
       expect(body.error).toContain('Blocked by CORS allowlist');
     });
 
-    test('Same-origin request is allowed (200 or 400 for missing Stripe config)', async ({ request }) => {
-      const response = await request.post(`${baseURL}/api/payments/stripe/create-intent`, {
+    test('Same-origin request is allowed', async ({ request }) => {
+      const response = await request.post(`${baseURL}/api/payments/payfast/initialize`, {
         headers: {
           ...(await csrfHeaders(request)),
         },
@@ -57,12 +58,12 @@ test.describe('Kixora Phase A: Security Hardening', () => {
         },
       });
 
-      // Should not be blocked by CORS (403). May return 400/500 due to missing Stripe config.
+      // Should not be blocked by CORS (403).
       expect(response.status()).not.toBe(403);
     });
 
     test('Allowed development origin (localhost:5173) is permitted', async ({ request }) => {
-      const response = await request.post(`${baseURL}/api/payments/stripe/create-intent`, {
+      const response = await request.post(`${baseURL}/api/payments/payfast/initialize`, {
         headers: {
           'Origin': 'http://localhost:5173',
           ...(await csrfHeaders(request)),
@@ -80,7 +81,7 @@ test.describe('Kixora Phase A: Security Hardening', () => {
     });
 
     test('Request with no Origin header is allowed (server-to-server)', async ({ request }) => {
-      const response = await request.post(`${baseURL}/api/payments/stripe/create-intent`, {
+      const response = await request.post(`${baseURL}/api/payments/payfast/initialize`, {
         headers: {
           ...(await csrfHeaders(request)),
         },
@@ -102,7 +103,7 @@ test.describe('Kixora Phase A: Security Hardening', () => {
   // ---------------------------------------------------------------------------
   test.describe('CSRF Protection', () => {
     test('POST to /api/payments without CSRF token is rejected (403)', async ({ request }) => {
-      const response = await request.post(`${baseURL}/api/payments/stripe/create-intent`, {
+      const response = await request.post(`${baseURL}/api/payments/payfast/initialize`, {
         headers: {
           'Content-Type': 'application/json',
         },
@@ -236,7 +237,7 @@ test.describe('Kixora Phase A: Security Hardening', () => {
       expect(response.status()).not.toBe(413);
     });
 
-    test('Payment intent endpoint still enforces its stricter 10KB limit', async ({ request }) => {
+    test('Payment request enforces the global 10KB limit', async ({ request }) => {
       // Create a payload between 10KB and 1MB
       const mediumPayload = {
         amount: 1000,
@@ -246,14 +247,14 @@ test.describe('Kixora Phase A: Security Hardening', () => {
         data: 'x'.repeat(15 * 1024), // 15KB - over the 10KB route-specific limit
       };
 
-      const response = await request.post(`${baseURL}/api/payments/stripe/create-intent`, {
+      const response = await request.post(`${baseURL}/api/payments/payfast/initialize`, {
         headers: {
           ...(await csrfHeaders(request)),
         },
         data: mediumPayload,
       });
 
-      // The payment intent route has its own 10KB limit
+      // The server rejects JSON payloads larger than its 10KB limit.
       expect(response.status()).toBe(413);
     });
   });
@@ -302,14 +303,14 @@ test.describe('Kixora Phase A: Security Hardening', () => {
       expect(csrfToken).toBeTruthy();
     });
 
-    test('Stripe payment intent endpoint responds (not blocked by CORS/CSRF when token provided)', async ({ request }) => {
+    test('PayFast payment request accepts a valid CSRF token', async ({ request }) => {
       // Get a valid CSRF token first
       const tokenResponse = await request.get(`${baseURL}/api/csrf`);
       const { csrfToken } = await tokenResponse.json();
       const cookies = tokenResponse.headers()['set-cookie'] || '';
       const csrfCookie = cookies.split(';')[0];
 
-      const response = await request.post(`${baseURL}/api/payments/stripe/create-intent`, {
+      const response = await request.post(`${baseURL}/api/payments/payfast/initialize`, {
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-Token': csrfToken,
@@ -323,8 +324,7 @@ test.describe('Kixora Phase A: Security Hardening', () => {
         },
       });
 
-      // Should not be blocked by CORS (403) or CSRF (403)
-      // May return 500 if Stripe is not configured, but that's expected
+      // The supplied token should prevent CSRF rejection.
       expect(response.status()).not.toBe(403);
     });
   });

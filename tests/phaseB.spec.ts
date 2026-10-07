@@ -1,74 +1,26 @@
 import { test, expect } from '@playwright/test';
 import { isPaymentConfigured } from '../src/config/env';
 
-test.describe('Phase B: Real Data & Payments', () => {
+test.describe('Phase B: Mock Data & Payments', () => {
 
-  test('Catalog loads real Supabase products', async ({ page }) => {
-    // Mock the Supabase network response with a specific product to verify it's reading from Supabase
-    await page.route('**/rest/v1/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            id: 'supa-shoe-1',
-            name: 'Supabase Exclusive Dunk',
-            price: 150,
-            brands: { name: 'Nike' },
-            product_images: [],
-            product_sizes: [{ size: 9, inventory: [{ stock: 10, reserved_stock: 0 }] }],
-            rating: 5,
-            reviews_count: 10,
-            is_active: true
-          }
-        ])
-      });
+  test('Catalog loads seeded mock products without Supabase', async ({ page }) => {
+    let supabaseRequested = false;
+    page.on('request', request => {
+      if (request.url().includes('/rest/v1/')) supabaseRequested = true;
     });
-
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    // Check if the mocked Supabase product appears on the page
-    const productLocator = page.locator('text=Supabase Exclusive Dunk');
-    await expect(productLocator).toBeVisible();
+    await expect(page.locator('div[id^="product-card-"]').first()).toBeVisible();
+    await expect(page.getByText(/Air Jordan 1 Retro High OG/i).first()).toBeVisible();
+    expect(supabaseRequested).toBe(false);
   });
 
-  test('Catalog gracefully handles Supabase fetch failure', async ({ page }) => {
-    // Force a 500 error from Supabase
-    await page.route('**/rest/v1/**', async (route) => {
-      await route.fulfill({ status: 500, body: 'Internal Server Error' });
-    });
-
+  test('Catalog remains available in mock mode without Supabase', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    // Check if the UI handles the error gracefully (e.g., showing a fallback or empty state, not crashing)
-    const noProductsText = page.locator('text=No sneakers found');
-    if (await noProductsText.isVisible()) {
-      await expect(noProductsText).toBeVisible();
-    } else {
-      // Just ensure the page didn't crash and still rendered the header
-      await expect(page.locator('text=BUILT FOR THE CULTURE')).toBeVisible();
-    }
+    await expect(page.locator('#homepage-hero')).toBeVisible();
+    await expect(page.locator('div[id^="product-card-"]').first()).toBeVisible();
   });
 
-  test('Payment flow uses real provider (Stripe/PayFast)', async ({ page }) => {
-    await page.route('**/rest/v1/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            id: 'checkout-shoe-1',
-            name: 'Checkout Shoe',
-            price: 100,
-            brands: { name: 'Nike' },
-            product_images: [],
-            product_sizes: [{ size: 9, inventory: [{ stock: 10, reserved_stock: 0 }] }],
-            rating: 5,
-            reviews_count: 10,
-            is_active: true
-          }
-        ])
-      });
-    });
-
+  test('Adding a mock product to cart does not create a payment intent', async ({ page }) => {
     let intentCalled = false;
     await page.route('**/api/payments/intent', async (route) => {
       intentCalled = true;
@@ -80,8 +32,8 @@ test.describe('Phase B: Real Data & Payments', () => {
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.click('text=Checkout Shoe');
-    await page.click('button:has-text("Add to Vault Cart")');
+    await page.locator('div[id^="product-card-"]').first().click();
+    await page.locator('#modal-add-to-cart-btn').click();
 
     // Adding an item to the cart must not create a payment intent prematurely.
     expect(intentCalled).toBe(false);

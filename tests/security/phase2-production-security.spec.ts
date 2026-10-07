@@ -1,18 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { validateProductionEnv } from '../../src/config/env';
-import { StripePaymentDriver } from '../../src/services/payments/stripeDriver';
 import { PayFastPaymentDriver } from '../../src/services/payments/payfastDriver';
 import { trackingWebhookService } from '../../src/services/shipping/trackingWebhookService';
 
 const envKeys = [
   'NODE_ENV',
   'VITE_PAYMENT_PROVIDER_MODE',
-  'VITE_STRIPE_PUBLISHABLE_KEY',
-  'VITE_PAYMENT_PUBLIC_KEY',
   'VITE_PAYFAST_MERCHANT_ID',
   'VITE_PAYFAST_MERCHANT_KEY',
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
   'PAYFAST_PASSPHRASE',
   'SHIPPING_WEBHOOK_SECRET',
   'CORS_ALLOWED_ORIGINS',
@@ -40,7 +35,7 @@ test.describe('Phase 2: Production Security Gates', () => {
   test('rejects mock payment mode and keeps shipping deferred unless explicitly enabled', () => {
     const result = validateProductionEnv();
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('VITE_PAYMENT_PROVIDER_MODE must be stripe or payfast in production.');
+    expect(result.errors).toContain('VITE_PAYMENT_PROVIDER_MODE must be payfast in production.');
     expect(result.errors).not.toContain('SHIPPING_WEBHOOK_SECRET is required when shipping is enabled.');
     expect(result.errors).toContain('CORS_ALLOWED_ORIGINS must contain explicit origins in production.');
   });
@@ -59,12 +54,7 @@ test.describe('Phase 2: Production Security Gates', () => {
     expect(validateProductionEnv()).toEqual({ valid: true, errors: [] });
   });
 
-  test('rejects unsigned Stripe, PayFast, and tracking webhooks', async () => {
-    const stripe = await new StripePaymentDriver().handleWebhook({
-      rawBody: JSON.stringify({ type: 'payment_intent.succeeded' }),
-    });
-    expect(stripe.success).toBe(false);
-
+  test('rejects unsigned PayFast and tracking webhooks', async () => {
     const payfast = await new PayFastPaymentDriver().handleWebhook({
       payload: { payment_status: 'COMPLETE', custom_str1: 'KX-TEST' },
     });

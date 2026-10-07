@@ -20,6 +20,9 @@ export default defineConfig({
             return 'admin-hub';
           }
           if (id.includes('node_modules')) {
+            if (id.includes('/three/') || id.includes('@react-three/')) {
+              return 'three-vendor';
+            }
             if (id.includes('lucide-react') || id.includes('motion')) {
               return 'ui-vendor';
             }

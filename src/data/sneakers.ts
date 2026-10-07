@@ -1,5 +1,8 @@
 import { Sneaker, Drop, PromoCode, Order } from '../types';
 
+const sneakerModelBaseUrl = import.meta.env.VITE_SNEAKER_MODEL_BASE_URL?.replace(/\/$/, '');
+const sneakerModelUrl = (filename: string) => sneakerModelBaseUrl ? `${sneakerModelBaseUrl}/${filename}.glb` : undefined;
+
 export const INITIAL_SNEAKERS: Sneaker[] = [
   {
     id: 'kixo-shattered-backboard-01',
@@ -11,6 +14,7 @@ export const INITIAL_SNEAKERS: Sneaker[] = [
     originalPrice: 5499,
     description: 'Inspired by the uniform Michael Jordan wore when he shattered the glass backboard in an Italian exhibition game.',
     image: 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-01.png',
+    modelUrl: sneakerModelUrl('kixo-shattered-backboard-01'),
     images: [
       'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-01.png',
       'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/shattered-backboard-02.png'
@@ -53,6 +57,7 @@ export const INITIAL_SNEAKERS: Sneaker[] = [
     originalPrice: 6200,
     description: 'Featuring the iconic inverted oversized Swoosh and signature Cactus Jack heel embroidery.',
     image: 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/travis-scott-mocha-01.png',
+    modelUrl: sneakerModelUrl('kixo-travis-scott-reverse-02'),
     images: [
       'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/travis-scott-mocha-01.png'
     ],
@@ -91,6 +96,7 @@ export const INITIAL_SNEAKERS: Sneaker[] = [
     originalPrice: 2899,
     description: 'The ultra-clean monochrome icon that defined modern street culture.',
     image: 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/dunk-low-panda-01.png',
+    modelUrl: sneakerModelUrl('kixo-dunk-low-panda-03'),
     images: [
       'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/dunk-low-panda-01.png'
     ],
@@ -128,6 +134,7 @@ export const INITIAL_SNEAKERS: Sneaker[] = [
     originalPrice: 2299,
     description: 'The radiance lives on with the b-ball icon that puts a fresh spin on crisp leather and clean lines.',
     image: 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/af1-triple-white-01.png',
+    modelUrl: sneakerModelUrl('kixo-af1-triple-white-07'),
     images: [
       'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/af1-triple-white-01.png'
     ],
@@ -164,6 +171,7 @@ export const INITIAL_SNEAKERS: Sneaker[] = [
     price: 5299,
     description: 'Triple-black nubuck stealth icon named after Michael Jordan’s nickname.',
     image: 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/aj4-black-cat-01.png',
+    modelUrl: sneakerModelUrl('kixo-aj4-black-cat-04'),
     images: [
       'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/aj4-black-cat-01.png'
     ],
@@ -200,6 +208,7 @@ export const INITIAL_SNEAKERS: Sneaker[] = [
     price: 3899,
     description: 'Iconic Primeknit zebra-striped upper with SPLY-350 branding in solar red.',
     image: 'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/yeezy-zebra-01.png',
+    modelUrl: sneakerModelUrl('kixo-yeezy-boost-350-05'),
     images: [
       'https://res.cloudinary.com/kixora/image/upload/f_auto,q_auto/kixora/products/yeezy-zebra-01.png'
     ],
