@@ -16,8 +16,6 @@ export function buildCspConnectSources(modelBaseUrl?: string): string[] {
     'wss://*.supabase.co',
     'https://api.cloudinary.com',
     'https://res.cloudinary.com',
-    'https://www.google-analytics.com',
-    'https://accounts.google.com',
   ];
 
   if (modelBaseUrl) {
