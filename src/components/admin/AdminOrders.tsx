@@ -3,8 +3,7 @@ import { useStore, formatPrice } from '../../context/StoreContext';
 import { OrderStatus } from '../../types';
 import { Search, Clock, Eye, RefreshCw, FileOutput, ShieldCheck, Truck, Package, Check } from 'lucide-react';
 import { adminOrderService } from '../../services/adminOrderService';
-import { googleDriveService } from '../../services/googleDriveService';
-import { useGoogleAuth } from '../../hooks/useGoogleAuth';
+import { generateOrderCSV } from '../../utils/orderCsv';
 import { authService } from '../../services/authService';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -14,7 +13,6 @@ export const AdminOrders: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isReconciling, setIsReconciling] = useState<string | null>(null);
   const [isCleaning, setIsCleaning] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
@@ -58,10 +56,6 @@ export const AdminOrders: React.FC = () => {
       setIsBatchProcessing(false);
     }
   };
-
-  const { token, requestToken, isAuthenticated } = useGoogleAuth([
-    'https://www.googleapis.com/auth/drive.file'
-  ]);
 
   const filteredOrders = orders.filter(o => {
     const matchSearch =
@@ -136,42 +130,30 @@ export const AdminOrders: React.FC = () => {
             EXPIRE STALE
           </button>
 
-          {!isAuthenticated ? (
-            <button
-              onClick={requestToken}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-white/5 text-white border border-white/10 hover:bg-white/10 transition-all"
-            >
-              <RefreshCw className="w-3 h-3" />
-              CONNECT DRIVE
-            </button>
-          ) : (
-            <button
-              onClick={async () => {
-                if (!token) return;
-                setIsExporting(true);
-                try {
-                  const csv = googleDriveService.generateOrderCSV(orders);
-                  const fileName = `Kixora_Reconciliation_${new Date().toISOString().split('T')[0]}.csv`;
-                  const res = await googleDriveService.uploadReport(token, fileName, csv, 'text/csv');
-                  if (res.success) {
-                    showToast('Export Success', 'Report uploaded to Google Drive.', 'success');
-                    if (res.webViewLink) window.open(res.webViewLink, '_blank');
-                  } else {
-                    throw new Error(res.error);
-                  }
-                } catch (err: any) {
-                  showToast('Export Failed', err.message, 'error');
-                } finally {
-                  setIsExporting(false);
-                }
-              }}
-              disabled={isExporting}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-[#3B82F6]/10 text-[#3B82F6] border border-[#3B82F6]/30 hover:bg-[#3B82F6]/20 disabled:opacity-50 transition-all"
-            >
-              <FileOutput className={`w-3 h-3 ${isExporting ? 'animate-spin' : ''}`} />
-              EXPORT TO DRIVE
-            </button>
-          )}
+          <button
+            onClick={() => {
+              try {
+                const csv = generateOrderCSV(orders);
+                const fileName = `Kixora_Reconciliation_${new Date().toISOString().split('T')[0]}.csv`;
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                showToast('Export Ready', 'CSV report downloaded.', 'success');
+              } catch (err: any) {
+                showToast('Export Failed', err.message, 'error');
+              }
+            }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-[#3B82F6]/10 text-[#3B82F6] border border-[#3B82F6]/30 hover:bg-[#3B82F6]/20 transition-all"
+          >
+            <FileOutput className="w-3 h-3" />
+            DOWNLOAD CSV
+          </button>
 
           <div className="h-6 w-[1px] bg-[#282828] mx-1" />
 
