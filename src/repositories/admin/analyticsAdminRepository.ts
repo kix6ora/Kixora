@@ -23,6 +23,14 @@ export interface LowStockAlert {
   productSizeId: string;
 }
 
+export interface TopSellingProduct {
+  productId: string;
+  name: string;
+  brand: string;
+  imageUrl: string;
+  salesCount: number;
+}
+
 export const analyticsAdminRepository = {
   /**
    * Calculates overall dashboard key performance indicators.
@@ -131,5 +139,48 @@ export const analyticsAdminRepository = {
     });
 
     return alerts;
+  },
+
+  /**
+   * Retrieves the best-selling products ranked by the sales_count maintained
+   * by the checkout database functions. Read-only; used by the admin dashboard.
+   */
+  async getTopSellingProducts(limit: number = 4): Promise<TopSellingProduct[]> {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        id,
+        name,
+        sales_count,
+        brands ( name ),
+        product_images ( image_url, display_order )
+      `)
+      .eq('is_active', true)
+      .order('sales_count', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('[analyticsAdminRepository.getTopSellingProducts] Error:', error);
+      throw error;
+    }
+
+    return (data || []).map((row: any) => {
+      const images = Array.isArray(row.product_images)
+        ? [...row.product_images].sort(
+            (a: any, b: any) => Number(a.display_order || 0) - Number(b.display_order || 0)
+          )
+        : [];
+      return {
+        productId: row.id,
+        name: row.name || 'Vault Sneaker',
+        brand: row.brands?.name || '',
+        imageUrl: images[0]?.image_url || '',
+        salesCount: Number(row.sales_count) || 0,
+      };
+    });
   },
 };

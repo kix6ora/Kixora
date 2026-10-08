@@ -11,10 +11,19 @@ export interface OrderTrackingResult {
   shipment?: any;
 }
 
+export interface OrdersQueryResult {
+  orders: Order[];
+  error: string | null;
+}
+
 export const orderRepository = {
-  async getOrders(userId?: string): Promise<Order[]> {
+  /**
+   * Fetches orders with the full error detail so callers can surface failures
+   * instead of silently receiving an empty list (D-13).
+   */
+  async getOrdersResult(userId?: string): Promise<OrdersQueryResult> {
     if (!isSupabaseConfigured()) {
-      return [];
+      return { orders: [], error: null };
     }
 
     try {
@@ -32,7 +41,6 @@ export const orderRepository = {
             )
           ),
           order_status_history (*),
-          order_events (*),
           shipments (*)
         `)
         .order('created_at', { ascending: false });
@@ -43,15 +51,26 @@ export const orderRepository = {
 
       const { data, error } = await query;
       if (error) {
-        console.warn('[orderRepository.getOrders] Error fetching orders:', error);
-        return [];
+        console.warn('[orderRepository.getOrdersResult] Error fetching orders:', error);
+        return { orders: [], error: error.message || 'Failed to load orders.' };
       }
 
-      return (data || []).map(row => mapOrderRowToOrder(row as unknown as OrderHydratedRow));
+      return {
+        orders: (data || []).map(row => mapOrderRowToOrder(row as unknown as OrderHydratedRow)),
+        error: null,
+      };
     } catch (err) {
-      console.warn('[orderRepository.getOrders] Exception:', err);
-      return [];
+      console.warn('[orderRepository.getOrdersResult] Exception:', err);
+      return {
+        orders: [],
+        error: err instanceof Error ? err.message : 'Failed to load orders.',
+      };
     }
+  },
+
+  async getOrders(userId?: string): Promise<Order[]> {
+    const { orders } = await this.getOrdersResult(userId);
+    return orders;
   },
 
   async getMyOrders(userId?: string): Promise<Order[]> {
@@ -86,7 +105,6 @@ export const orderRepository = {
             )
           ),
           order_status_history (*),
-          order_events (*),
           shipments (*)
         `);
 
