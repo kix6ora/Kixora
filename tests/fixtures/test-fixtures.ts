@@ -68,6 +68,8 @@ export const test = base.extend<KixoraFixtures>({
     await page.waitForSelector('header', { state: 'visible' });
     await stabilizePage(page);
 
+    await page.locator('#header-admin-profile-button').click();
+
     // Ensure the admin shell has rendered before tests interact with admin navigation.
     await Promise.race([
       page.waitForSelector('#admin-nav-dashboard', { state: 'visible', timeout: 10000 }),
