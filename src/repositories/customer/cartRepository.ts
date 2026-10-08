@@ -84,7 +84,7 @@ export const cartRepository = {
               inventory (*)
             )
           ),
-          product_sizes (*),
+          product_sizes (*)
         `)
         .eq('cart_id', cartId);
 
