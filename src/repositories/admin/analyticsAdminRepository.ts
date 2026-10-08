@@ -31,6 +31,15 @@ export interface TopSellingProduct {
   salesCount: number;
 }
 
+export interface RecentAdminOrder {
+  id: string;
+  orderCode: string;
+  total: number;
+  status: string;
+  createdAt: string;
+  customerName: string;
+}
+
 export const analyticsAdminRepository = {
   /**
    * Calculates overall dashboard key performance indicators.
@@ -182,5 +191,35 @@ export const analyticsAdminRepository = {
         salesCount: Number(row.sales_count) || 0,
       };
     });
+  },
+
+  /**
+   * Retrieves the most recent orders for the admin dashboard. Read-only.
+   */
+  async getRecentOrders(limit: number = 5): Promise<RecentAdminOrder[]> {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, order_code, total, current_status, created_at, customer_full_name, customer_snapshot')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('[analyticsAdminRepository.getRecentOrders] Error:', error);
+      throw error;
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      orderCode: row.order_code || row.id,
+      total: Number(row.total) || 0,
+      status: row.current_status || 'Processing',
+      createdAt: row.created_at,
+      customerName:
+        row.customer_snapshot?.fullName || row.customer_full_name || 'Valued Collector',
+    }));
   },
 };

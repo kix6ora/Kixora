@@ -25,6 +25,20 @@ function isMockAuthSessionAllowed(): boolean {
   if (metaEnv.VITE_PLAYWRIGHT_ADMIN === 'true' || procEnv.VITE_PLAYWRIGHT_ADMIN === 'true') {
     return true;
   }
+  // D-04 override: explicit production-auth enforcement always wins over the
+  // test-mode early return below. Accept string 'true' as well as boolean true
+  // for PROD because vi.stubEnv stores strings, and accept process.env because
+  // Vite may statically inline import.meta.env under Vitest.
+  const forceProductionAuth =
+    metaEnv.VITE_FORCE_PRODUCTION_AUTH === 'true' ||
+    procEnv.VITE_FORCE_PRODUCTION_AUTH === 'true';
+  const prodFlag =
+    metaEnv.PROD === true ||
+    (metaEnv.PROD as unknown as string) === 'true' ||
+    procEnv.PROD === 'true';
+  if (forceProductionAuth || prodFlag) {
+    return false;
+  }
   if (metaEnv.MODE === 'test' || procEnv.NODE_ENV === 'test') {
     return true;
   }
@@ -38,6 +52,7 @@ function isMockAuthSessionAllowed(): boolean {
  */
 function guardMockAuthStorage(): boolean {
   if (isMockAuthSessionAllowed()) return true;
+  inMemorySession = null;
   try {
     localStorage.removeItem(MOCK_STORAGE_KEY);
   } catch {
