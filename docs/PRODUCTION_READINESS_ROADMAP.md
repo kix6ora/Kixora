@@ -39,19 +39,82 @@ called out explicitly.
 | `.env.example` | Documented env contract (client `VITE_*` + server secrets) |
 | `public/` | `manifest.json`, `icon.svg`, `icon-192.png`, `icon-512.png`, `sw.js` |
 
-### Frontend structure (`src/`)
+---
+
+## 2b. Branch topology and the `develop` line (added after the first audit pass)
+
+The first pass audited `main` (`e4c973a`). The remote has **eight** branches, and
+the real work-in-progress lives on **`develop`**, which is **145 commits ahead of
+`main`**:
+
+| Branch | HEAD | Status |
+| --- | --- | --- |
+| `main` | `e4c973a` | Merge of PR #28 (`develop` → `main`), 2026-10-07 |
+| `develop` | `d1c0b01` | **145 commits ahead of `main`** — the active integration branch |
+| `fix/p0-launch-blockers` | `c390c11` | merged into `develop` via PR #29 |
+| `fix/ci-green` | `2adc8af` | merged into `develop` via PR #30 |
+| `fix/admin-orders-security` | `1efbdaf` | merged into `develop` via PR #31 |
+| `fix/audit-gate-prod-only` | `ad57a55` | merged into `develop` via PR #32 |
+| `fix/admin-dashboard-live` | `ab084b7` | merged into `develop` via PR #33 |
+| `fix/dashboard-queries` | `2841c29` | merged into `develop` via PR #34 |
+| `fix/guest-merge-uuid` | `4002a43` | merged into `develop` via PR #35 |
+| `fix/staging-blockers` | `16adfce` | merged into `develop` via PR #21 |
+| `staging/payfast-checkout` | `c54454f` | merged into `develop` via PR #26/#27 |
+
+There are **no open pull requests**, and there is no PR from `develop` into
+`main`. `.clinerules` (added on `develop`) states the intended workflow:
+*"Never push to main. Work on a branch; PR into develop; test-and-build must be
+green."* So `main` is a stale mirror of a much older state, and every conclusion
+in §4 and §5 that is based on `main` had to be re-verified against `develop`.
+
+### What `develop` already fixes (verified by running the suite on `develop`)
+
+`develop` measurably addresses several items from the first pass:
+
+| First-pass finding (on `main`) | Status on `develop` |
+| --- | --- |
+| Shipping throws in production | **Fixed** — deterministic flat-rate quotes in production (`src/services/shipping/shippingService.ts`) |
+| `manifest.json` declares only `icon.svg`; icon test fails | **Fixed** — manifest declares `/icon-192.png` + `/icon-512.png` |
+| Mock/localStorage session could authenticate a production build | **Fixed** — `guardMockAuthStorage()` / `isMockAuthSessionAllowed()` in `src/services/authService.ts` (defect D-04) |
+| Orders seeded from demo/localStorage data in production | **Fixed** — production + Supabase-orders builds start with an empty order list (defect D-13) |
+| Order refresh failed silently and returned an empty list | **Fixed** — `orderRepository.getOrdersResult()` returns `{ orders, error }`; `refreshOrders()` now surfaces a toast |
+| Google/AI Studio leftovers (GSI script, `useGoogleAuth`, `googleDriveService`, `metadata.json`, `firebase-applet-config.json`, `skills-lock.json`) | **Removed** |
+| CSP allowed `accounts.google.com` / `www.google-analytics.com` | **Removed** from `scriptSrc`, `styleSrc`, `frameSrc`, `connectSrc` |
+| Stale E2E tests (phaseB expectation, observability consent, admin fixture, env keys) | **Repaired** |
+| `npm audit` failing on Tailwind v3 dev-only advisories | **Changed to `npm audit --omit=dev`** with a written deferral in `docs/staging/deferrals.md` |
+| Cart `product_sizes (*)` select trailing comma | **Fixed** |
+| Guest wishlist merge inserting non-UUID product ids | **Fixed** (UUID validation before insert) |
+| No admin audit RPC boundary | **Added** — `0033_admin_audit_access.sql` revokes direct `SELECT` and adds `admin_audit_logs_for_admin` |
+| Admin dashboard used static/mock numbers | **Replaced** with live data (`components/admin/dashboard/*`, `analyticsAdminRepository.getDashboardMetrics/getLowStockAlerts/getTopSellingProducts/getRecentOrders`) |
+
+### Verification I ran against `develop` (checked out locally as `develop-local`)
+
+| Command | `main` | `develop` |
+| --- | --- | --- |
+| `npx tsc --noEmit` | exit 0 | exit 0 |
+| `npx eslint . --max-warnings 0` | exit 0 | exit 0 |
+| `npm run test` (Vitest) | 15 passed / **2 failed** files — 45/47 tests | **23 passed / 0 failed files — 58/58 tests** |
+| `npx playwright test` | 110 passed / 55 failed | 112 passed / 53 failed (all failures `browserType.launch` — sandbox browser crash, not assertions) |
+
+So the `main` test suite is red only because it predates the fixes already merged
+into `develop`. **`develop` is the green baseline** — and that changes the
+recommended starting point (§8).
+
+
+### Frontend structure (`src/`, as audited on `main`)
+
 
 - `App.tsx` — SPA shell; view switching via `useState` (no router library), lazy-loaded admin hub, cookie-consent banner
 - `components/` — 23 storefront components (Hero, Filters, ProductCard/Modal, CartDrawer, CheckoutModal, PayFastReturn, DropsCalendar, OrderTrackingModal, WishlistModal, CustomerAuthModal, Sneaker3D*, SEO, Toast, Navbar, MobileNav, Footer…)
-- `components/admin/` — 7 admin screens (Dashboard, Products, Orders, Inventory, Promos, Analytics, SignOut)
+- `components/admin/` — 7 admin screens (Dashboard, Products, Orders, Inventory, Promos, Analytics, SignOut); on `develop` this gains `components/admin/dashboard/*` (KPI cards, recent orders, top selling, `useDashboardData`)
 - `context/StoreContext.tsx` — 935-line global store (catalog, filters, cart, wishlist, orders, promos, toasts) with localStorage persistence
 - `context/adapters/` — cart/catalog/wishlist adapters switching between mock and Supabase
 - `repositories/` — layered DAL: `customer/*` (cart, drops, order, product, wishlist), `admin/*` (audit, drops, inventory, order, product, promo, analytics) + legacy top-level duplicates
-- `services/` — auth, checkout, payment, webhook, promo, inventory(+sync), fulfillment, email, shipping (carrier + tracking webhook), storage, analytics, audit, monitoring, googleDrive
+- `services/` — auth, checkout, payment, webhook, promo, inventory(+sync), fulfillment, email, shipping (carrier + tracking webhook), storage, analytics, audit, monitoring; `googleDriveService.ts` exists on `main` and is **deleted on `develop`**
 - `services/payments/` — driver registry: `payfastDriver`, `mockDriver`, `crypto` (MD5 signature), `payfastCheckout`, `webhookIdempotency`
 - `routes/` — `AdminRoute`, `DomainGuard`, `ProtectedRoute`
 - `config/` — `env.ts` (validation), `features.ts` (14 feature flags), `cors.ts`, `cspImageSources.ts`
-- `hooks/` — `useAuth`, `useCart`, `useOrders`, `useProducts`, `useDrops`, `useWishlist`, `useGoogleAuth`, `useUserRole` + `hooks/admin/*`
+- `hooks/` — `useAuth`, `useCart`, `useOrders`, `useProducts`, `useDrops`, `useWishlist`, `useUserRole` + `hooks/admin/*` (`useGoogleAuth` is **deleted on `develop`**)
 
 ---
 
@@ -98,6 +161,11 @@ called out explicitly.
    `/icon-192.png` and `/icon-512.png`; the manifest only declares `icon.svg`,
    while `src/server/staticAssets.ts` deliberately returns **404** for
    `/icon-*.png`. PWA install icons are therefore unreachable in production.
+
+**Update after the `develop` pass:** both of these failures are already fixed on
+`develop` (manifest icons + production flat-rate shipping fallback). On `develop`
+the suite is 23 files / 58 tests with 0 failures — see §2b. Treat `main` as a
+stale snapshot; the roadmap status notes below reference `develop`.
 
 
 ---
@@ -389,8 +457,84 @@ Supabase `profiles` ping plus uptime/commit info; `/api/ready` config readiness;
   in the repo root.
 - `README.md` is one sentence; onboarding knowledge is scattered across 15+ docs.
 - `.env.example` advertises `VITE_CLOUDINARY_API_KEY` (unused) as a client var.
-- No `.dockerignore`.
+- No `.dockerignore` (still true on `develop`).
 
+### 5.13 Branch topology, environment drift and defects found on `develop`
+
+These were not visible from `main` alone. They are the most consequential
+findings of the second pass.
+
+**A. The CI/CD pipeline deploys to a platform the product does not run on.**
+`deploy-staging.yml` and `deploy-production.yml` build a Docker image, push it to
+Google Artifact Registry and run `gcloud run deploy` with a `curl /api/health`
+check. But the actual staging environment is **Render**, as evidenced by
+`src/lib/healthCheck.ts` (`RENDER_SERVICE_NAME`, `RENDER_GIT_COMMIT`),
+`scripts/staging/wait-for-render-deploy.mjs`, and
+`docs/staging/item1-gate-report.md` ("Configure and deploy both Render services ...
+`kixora-staging.onrender.com` ... `kixora-admin-staging.onrender.com`").
+`docs/DEPLOYMENT_RUNBOOK.md` never mentions Render, and there is no `render.yaml`
+or any Render configuration in the repo. Net effect: **the automated deploy path
+has probably never been exercised**, and the environment that is actually used is
+configured by hand in a dashboard with no version control.
+
+**B. Staging does run two separate services** (`kixora-staging` for customers and
+`kixora-admin-staging` for admins), so the admin/customer origin split is partly
+real on staging - but it is not expressed in any deploy workflow, and the
+production topology is undefined.
+
+**C. `main` is a stale mirror.** `develop` is 145 commits ahead, no PR from
+`develop` into `main` is open, and the most recent `develop` to `main` merge was PR
+#28. A release cut from `main` today would ship code from before the P0 launch
+fixes.
+
+**D. Shipping prices disagree in three places.** `develop` fixed the production
+throw, but the numbers do not match:
+- `src/services/shipping/shippingService.ts` (production flat rate): free when
+  `totalValueZar > 1500`, otherwise R120 (other provinces) / R150 (Gauteng) /
+  R200 (Western Cape).
+- `supabase/migrations/0009_functions.sql` `place_order_atomic` (authoritative -
+  what is actually charged): free when `subtotal >= 2000`, otherwise R150 flat.
+- `src/services/checkoutService.ts` (mock mode): free when `subtotal >= 2000`,
+  otherwise R150.
+
+A R1,600 Western Cape order is quoted free by the shipping service and charged
+R150 by the database. That is a customer-facing price inconsistency and a
+support/chargeback risk.
+
+**E. Three different carrier names are in circulation.** The shipping service
+reports `carrierName: 'The Courier Guy'` for what is now a flat-rate estimate; the
+`shipments` table defaults `carrier` to `'Vault Priority Express'`
+(`0006_orders.sql`); and `src/repositories/customer/orderMapper.ts` falls back to
+`'RAM Hand-to-Hand'` when rendering tracking. A customer can see three different
+carriers for one order.
+
+**F. The Vitest coverage gate is decorative and was not updated.** `develop` added
+seven new unit test files, but `vitest.config.ts` still lists only six covered
+files with thresholds of `statements: 2, branches: 4, functions: 1, lines: 2`. The
+new repository/service tests therefore do not raise the measured number at all.
+
+**G. Migrations `0032` and `0033` were not applied to staging** according to
+`docs/staging/item1-gate-report.md`, which also records several gate items as
+`PENDING-USER` (deploy SHA verification, live RLS privilege retest, duplicate-ITN
+stock evidence). The report itself notes that GitHub write access was unavailable
+when it was written, so parts of it may be behind `develop`.
+
+**H. Accepted deferrals on `develop`** (`docs/staging/deferrals.md`) - each is
+still a launch dependency, not a closed item:
+- Google account sign-in - no Supabase OAuth flow exists (the removed hook was for
+  Drive reports, not auth). Customers get email/password only.
+- Real brand icons - the manifest work is structurally fixed, but the assets are
+  placeholders.
+- Live PayFast passphrase - live checkout has never been verified; sandbox only.
+- Tailwind v3 to v4 - 5 high + 2 moderate advisories remain in the build-time
+  dependency chain; the CI audit gate was narrowed to `--omit=dev` rather than
+  fixed.
+
+**I. Defect and evidence tracking is thin.** `docs/production-evidence/*`
+(including the Phase 0 tracker) was deleted on `develop`, only two defect records
+exist (`docs/testing/defects/DEF-001.md`, `DEF-005.md`) with no index and no link
+from the gate report, and defect ids referenced in code comments (`D-04`, `D-13`)
+have no document defining them.
 
 ---
 
@@ -404,6 +548,17 @@ design decision. **Order** = suggested sequence inside the phase.
 ### Phase 0 – Foundation & Safety
 
 > Nothing else should be built until the repository is honest: green gates,
+
+**Status on `develop` (re-checked after the second pass):**
+- 0.1 ✅ **done** — manifest icons fixed, production flat-rate shipping added, 58/58 unit tests green.
+- 0.2 ⚠️ **partly done** — `develop` is green under `npm run test` / `tsc` / `eslint`; the release gate itself has not been re-run end-to-end on `develop`.
+- 0.3 ⚠️ **partly done** — `VITE_PLAYWRIGHT_ADMIN` still exists, but is now gated behind the D-04 production-auth guard in `authService.ts`; `DomainGuard` itself is unchanged.
+- 0.4 ❌ **not done** — `PRODUCTION_LAUNCH.md` / `PRODUCTION_READINESS_AUDIT.md` are unchanged on `develop` and still describe Cloud Run, immutable caching and PWA install.
+- 0.5 ⚠️ **partly done** — Google/Drive/AI-Studio leftovers were deleted, but `kixora-staging-blockers.patch` and `README_PUSH.txt` remain and there is still no `.dockerignore`.
+- 0.6 ❌ **not done**.
+- 0.7 ⚠️ **partly done** — D-04 (mock auth session) and D-13 (demo orders) guards were added; the other 12 `VITE_USE_SUPABASE_*` flags are still unchecked in production.
+- 0.8 ⚠️ **partly done** — `.clinerules` documents "branch, PR into develop, never push to main", but `main` is 145 commits behind `develop` and nothing enforces the rule.
+
 > no test-only escape hatches in shipped code, and docs that match reality.
 
 **0.1 Resolve the two failing unit tests (decide behaviour, then make code and
@@ -513,6 +668,21 @@ test agree)**
   `docs/DEPLOYMENT_RUNBOOK.md`.
 
 
+**0.9 Land `develop` on `main` and make the branch model real**
+- **What:** Open the `develop` → `main` pull request (145 commits), review it,
+  merge it, and then re-baseline the roadmap against `main`. Delete the fully
+  merged `fix/*` branches. Decide whether `main` means "production" or "latest
+  released" and write it down.
+- **Why:** Every audit, CI run and release decision taken against `main` today is
+  describing code that is weeks old. This is the single highest-leverage
+  housekeeping item in the repo and it must happen before any other phase work,
+  because it changes what "current state" means.
+- **Size:** S (mechanical, but needs a careful review of the diff)
+- **Order:** 0 (do this before anything else in Phase 1)
+- **Acceptance criteria:** `main` contains the P0 launch fixes; `git log main..develop`
+  is empty; the merged `fix/*` branches are deleted; `docs/PRODUCTION_READINESS_ROADMAP.md`
+  status notes are re-verified against the new `main`.
+
 ---
 
 ### Phase 1 – Core Production Requirements
@@ -520,6 +690,25 @@ test agree)**
 > The minimum bar before a single real customer can pay real money.
 
 **1.1 Password reset, forgot-password and email-verification flows**
+
+**Status on `develop` (re-checked after the second pass):**
+- 1.1 ❌ **not done** — the staging gate report explicitly records "No resend or
+  password-reset calls exist in source".
+- 1.2 ❌ **not done** — `monitoringService` is unchanged and still has no Sentry SDK.
+- 1.3 ❌ **not done** — still no validation library in `package.json`.
+- 1.4 ❌ **not done** — refunds still return `success: false`.
+- 1.5 ⚠️ **partly done** — production no longer throws (deterministic flat rate), but
+  the rates disagree with the database and checkout (see §5.13 D and item 1.13).
+- 1.6 ❌ **not done** — still no scheduler for cleanup RPCs.
+- 1.7 ⚠️ **partly done** — the admin audit RPC boundary (`0033`) was added; the
+  origin-level isolation is unchanged and staging does run a second service.
+- 1.8 ⚠️ **partly done** — the CI audit gate was narrowed to production
+  dependencies; `verify-deploy-env.mjs` still validates GCP variables only.
+- 1.9 ❌ **not done** — migrations are still applied by hand (SQL Editor).
+- 1.10 ❌ **not done** — no compression, no `Cache-Control` in `staticAssets.ts`.
+- 1.11 ⚠️ **partly done** — manifest icons fixed; `sw.js` is still never registered.
+- 1.12 ❌ **not done** — no Terms/Privacy/Returns pages.
+
 - **What:** Add Supabase `resetPasswordForEmail` + `updateUser` flows and UI
   (request link, set-new-password screen, expired/invalid token handling) and turn
   on email confirmation in the Supabase auth config. Use a `getPublicSiteUrl()`
@@ -685,12 +874,52 @@ test agree)**
   before consent is granted.
 
 
+**1.13 Make shipping prices consistent across the quote, the order and the UI**
+- **What:** Choose one source of truth for shipping cost (the free-shipping
+  threshold and the per-province rate) and use it in
+  `src/services/shipping/shippingService.ts`, `place_order_atomic`
+  (`supabase/migrations/0009_functions.sql`) and `src/services/checkoutService.ts`.
+  Add a unit test that asserts the quoted rate equals the charged rate for a set of
+  representative carts.
+- **Why:** On `develop` a R1,600 Western Cape order is quoted free by the shipping
+  service and charged R150 by the database. Quoting one price and charging another
+  is a trust, support and chargeback problem, and it is trivially discoverable by a
+  customer.
+- **Size:** M
+- **Order:** 13
+- **Acceptance criteria:** One constant/table drives all three code paths; the
+  regression test fails if they diverge; the customer-facing checkout total equals
+  the order total in a staging sandbox purchase.
+
+**1.14 Decide and codify the real deployment platform**
+- **What:** The repo claims Cloud Run (`deploy-*.yml`, `Dockerfile`,
+  `docs/DEPLOYMENT_RUNBOOK.md`) but actually runs on Render
+  (`kixora-staging` / `kixora-admin-staging`, `RENDER_*` env vars,
+  `scripts/staging/wait-for-render-deploy.mjs`). Pick one, then either add the
+  Render config as code (`render.yaml`, build/start commands, health check path) and
+  delete the unused Cloud Run workflows, or actually deploy to Cloud Run. Document
+  the production topology (one service or two, which origins, which regions).
+- **Why:** Today the automated deploy path has almost certainly never run, and the
+  environment that customers use is configured by hand in a dashboard. Nobody can
+  reproduce staging, and a production rollback plan is untestable.
+- **Size:** M
+- **Order:** 14
+- **Acceptance criteria:** One documented platform; infrastructure config in version
+  control; a deploy can be reproduced from an empty project by following the
+  runbook; the stale platform's workflows and doc references are removed.
+
 ---
 
 ### Phase 2 – Stability & Quality
 
 > Make the system provable: tests that mean something, limits that hold under
 > real traffic, and visibility when things break.
+
+**Status on `develop` (re-checked after the second pass):** none of Phase 2 is
+done. 2.1 is *worse* than it looks — `develop` added seven unit test files but left
+`vitest.config.ts` covering the same six files, so the coverage number did not move
+(see item 2.14).
+
 
 **2.1 Raise real test coverage on the money paths**
 - **What:** Replace the placeholder coverage config (`statements: 2, branches: 4,
@@ -862,6 +1091,31 @@ test agree)**
 - **Acceptance criteria:** Dependency PRs are raised automatically; a committed
   fake secret fails CI; each release artifact has an SBOM and a clean image scan.
 
+
+**2.14 Make the coverage gate measure the tests that now exist**
+- **What:** Add the newly tested modules (`repositories/customer/orderRepository`,
+  `wishlistRepository`, `cartRepository`, `repositories/admin/analyticsAdminRepository`,
+  `lib/healthCheck`, `services/authService`) to the `coverage.include` list in
+  `vitest.config.ts` and raise the thresholds from the current `2 / 4 / 1 / 2`.
+- **Why:** `develop` added tests for exactly these files and the gate ignores all of
+  them. A coverage gate that cannot see new tests provides false assurance.
+- **Size:** S
+- **Order:** 14
+- **Acceptance criteria:** `npm run test:coverage` reports non-trivial numbers for
+  the newly tested modules and fails when they regress.
+
+**2.15 Create a real defect and evidence register**
+- **What:** Consolidate `docs/testing/defects/*` into an indexed register (id,
+  severity, status, owner, evidence link), define the `D-xx` ids that already appear
+  in code comments (`D-04`, `D-13`), and restore a lightweight production-evidence
+  tracker (`docs/production-evidence/TRACKER.md` was deleted on `develop`).
+- **Why:** Defect ids in the code have no definition, and the deleted tracker was the
+  only place recording which production items had been verified.
+- **Size:** S
+- **Order:** 15
+- **Acceptance criteria:** Every `D-xx` reference in the code resolves to a register
+  entry; the gate report links to the register; the tracker lists each open item with
+  evidence.
 
 ---
 
@@ -1085,53 +1339,80 @@ test agree)**
 
 # 7. Top 5 highest-risk items
 
+*Revised after the `develop` pass. Item 1 changed shape (the throw was fixed, the
+prices now disagree), the red-suite item is resolved on `develop`, and the branch
+/ platform drift is new and material.*
+
 | # | Risk | Why it is the highest risk | Where |
 | --- | --- | --- | --- |
-| 1 | **Shipping cannot run in production, yet checkout implies it works** | `ShippingService.calculateRates`/`createShipmentLabel` throw when `NODE_ENV === 'production'`, and `TheCourierGuyDriver` returns hardcoded rates. Every production checkout would fail or silently use invented prices, and the launch smoke tests cannot pass. | `src/services/shipping/shippingService.ts:38-40, 57-59`, `src/services/shipping/carrierDrivers.ts` |
-| 2 | **No error tracking and no top-level error boundary** | `monitoringService.dispatchToSentry` POSTs raw JSON to the DSN (not the Sentry envelope API) and no `@sentry/*` package is installed, so production failures are invisible; a single render error blanks the whole storefront with no report. | `src/services/monitoringService.ts:18-31`, `src/App.tsx` |
-| 3 | **Account recovery does not exist** | There is no password reset, forgot-password or email-verification flow anywhere, and `enable_confirmations = false`. Any customer who forgets a password is permanently locked out of paid orders. | grep for `resetPassword`/`forgot` returns nothing; `supabase/config.toml` |
-| 4 | **Stale orders and reservations are never cleaned up automatically** | `cleanup_stale_pending_orders()` / `cleanup_expired_reservations()` exist but nothing schedules them (no `pg_cron`, no job, no worker). Abandoned checkouts permanently hold stock and inventory under-sells with no signal. | `supabase/migrations/0009_functions.sql`, `0016_reconciliation_refinements.sql`, `src/services/adminOrderService.ts:146` |
-| 5 | **No refunds, plus a red test suite and near-zero coverage on money paths** | `processRefund` returns `success: false`; two unit tests fail today; coverage thresholds are 2%/4%/1%/2% over 6 files, so payment, webhook and inventory logic has no unit-level safety net. Money-handling code is both incomplete and unproven. | `src/services/payments/payfastDriver.ts:177-193`, `vitest.config.ts`, `npm run test` output |
+| 1 | **The CI/CD pipeline deploys to a platform the product does not run on** | `deploy-*.yml` build a Docker image, push to Artifact Registry and `gcloud run deploy` with a `/api/health` check, while the real staging environment is two hand-configured Render services (`kixora-staging`, `kixora-admin-staging`). There is no `render.yaml` and no Render mention in `docs/DEPLOYMENT_RUNBOOK.md`. The automated deploy path has almost certainly never run, and production topology is undefined. | `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-production.yml`, `src/lib/healthCheck.ts`, `scripts/staging/wait-for-render-deploy.mjs`, `docs/staging/item1-gate-report.md` |
+| 2 | **`main` is 145 commits behind `develop`, with no PR to land it** | Every release cut from `main` today ships code from before the P0 launch fixes (mock-session guard, flat-rate shipping, manifest icons, live admin dashboard). No open PR exists from `develop` into `main`. | `git log --oneline main..origin/develop` = 145 commits; `gh pr list --state open` = empty |
+| 3 | **Shipping quotes disagree with what is charged** | The production flat rate is free above R1,500 with R120/R150/R200 by province; `place_order_atomic` is free at >= R2,000 else R150 flat; mock checkout matches the database. A R1,600 Western Cape order is quoted free and charged R150. | `src/services/shipping/shippingService.ts`, `supabase/migrations/0009_functions.sql:225-232`, `src/services/checkoutService.ts:77` |
+| 4 | **No error tracking, no top-level error boundary, no metrics** | `monitoringService.dispatchToSentry` POSTs raw JSON to the DSN (not the Sentry envelope API) and no `@sentry/*` package exists, so production failures are invisible; one render error blanks the storefront. Unchanged on `develop`. | `src/services/monitoringService.ts:18-31`, `src/App.tsx`, `package.json` |
+| 5 | **No refunds and no automatic cleanup of stale orders/reservations** | `processRefund` returns `success: false`; `cleanup_stale_pending_orders()` / `cleanup_expired_reservations()` exist but nothing schedules them (no `pg_cron`, no job, no worker). Abandoned checkouts hold stock forever and money can only be returned by hand. | `src/services/payments/payfastDriver.ts:177-193`, `supabase/migrations/0009_functions.sql`, `0016_reconciliation_refinements.sql` |
 
-**Honourable mentions (not in the top 5, but real):** the client-only admin domain
-guard plus the `VITE_PLAYWRIGHT_ADMIN` escape hatch; the in-memory rate limiter;
-`csurf` being unmaintained; the manifest/PNG-icon mismatch that makes the documented
-PWA install fake; and the doc-vs-code drift on static caching.
+**Also high, just outside the top five:** account recovery still does not exist
+(no password reset / email verification, `enable_confirmations = false`); the
+client-only admin domain guard with the `VITE_PLAYWRIGHT_ADMIN` escape hatch; the
+in-memory rate limiter; `csurf` being unmaintained; the coverage gate that ignores
+the seven new test files; and the accepted-but-open deferrals (live PayFast
+passphrase, Tailwind v3 advisories, placeholder brand icons, no Google sign-in).
 
 ---
 
-# 8. Recommended starting point
+# 8. Recommended starting point (revised)
 
-**Start with Phase 0 items 0.1 and 0.2: make the test suite green and make
-`npm run release:gate` pass.**
+**Start with Phase 0 item 0.9: land `develop` on `main`.**
 
-Concretely, the very first task is:
+The first version of this document said "make the test suite green". That advice is
+now obsolete: `main` is red only because it is 145 commits behind `develop`, and
+`develop` is already green (`tsc` 0, `eslint` 0, **58/58 unit tests**, Playwright
+failures all environmental). The most useful first move is therefore to make the
+repository describe reality:
 
-> Decide the intended production behaviour for the shipping service (throw vs.
-> fallback) and for the PWA icons, make the code and `manifest.json` agree, then get
-> `npm run test` to 0 failures and `npm run release:gate` to exit 0 on the current
-> commit.
+> Open the `develop` → `main` pull request, review the 145-commit diff, merge it,
+> delete the fully merged `fix/*` branches, and then re-verify the status notes in
+> this document against the new `main`.
 
 **Why this first:**
-1. Every later phase depends on a trustworthy gate. Right now the suite is red, so
-   "the tests pass" is not a statement anyone can make.
-2. Both failures are decisions disguised as bugs — resolving them forces the team to
-   state what the product actually promises (does shipping exist? is the PWA real?).
-   That answers the two biggest scope questions in Phase 1.
-3. It is small (S), unblocks CI for every subsequent change, and produces the first
-   honest green baseline.
+1. Every other item in this roadmap is currently measured against a stale branch.
+   Merging first makes the audit, the CI signal and the release process describe the
+   same code.
+2. It is mechanical and low-risk (`tsc`/`eslint`/unit tests are green on `develop`),
+   so it can be done in a single focused session.
+3. It immediately de-risks the two things that would otherwise bite at launch: a
+   release built from `main` silently missing the P0 fixes, and a team that cannot
+   tell which branch is authoritative.
 
-Immediately after that, do **Phase 0 items 0.3 and 0.7** (remove the admin bypass
-and fail the build when the mock data path is active in production) — these are the
-two remaining "the environment could silently betray you" risks.
+**Then, in order:**
+
+1. **Phase 0.9** — land `develop` on `main` (S).
+2. **Phase 1.14** — decide Render vs Cloud Run and put the real environment under
+   version control (M). Until this is done, nothing can be reproduced or rolled
+   back, and no CI signal means anything about production.
+3. **Phase 1.13** — reconcile the three shipping price calculations (M). This is the
+   smallest change with the largest immediate customer-trust payoff.
+4. **Phase 0.2 / 0.4** — re-run the release gate on the new `main` and correct the
+   docs that still claim Cloud Run, immutable caching and a working PWA (S).
+5. **Phase 1.1, 1.2, 1.6** — password reset, real error tracking, scheduled cleanup
+   jobs. These are the three absences a customer or an operator will hit first.
 
 
----
+# 9. Overall project health summary (revised)
 
-# 9. Overall project health summary
+**Verdict: NEEDS WORK — and the picture is better than the `main`-only audit
+suggested, but the delivery process is the weakest link.**
 
-**Verdict: NEEDS WORK — with HIGH RISK concentrated in payments, fulfilment and
-observability.**
+**Two-track summary:**
+- **Code health on `develop`: improving and now green.** 58/58 unit tests pass,
+  `tsc` and `eslint` are clean, the P0 launch blockers (manifest icons, production
+  shipping throw, mock-session authentication, demo orders in production, silent
+  order-refresh failures) are fixed, Google/AI-Studio leftovers are gone, and the
+  admin dashboard reads live data through a new analytics repository with tests.
+- **Delivery/ops health: poor.** The code that is green on `develop` is not the code
+  on `main`, the CI deploy path targets a platform the product does not use, the
+  environment is hand-configured, migrations are applied by hand in a dashboard,
+  and the coverage gate does not see the tests that were just added.
 
 **What is genuinely good (and better than a typical pre-production repo):**
 - A real layered architecture: components → hooks → repositories → services →
@@ -1140,36 +1421,43 @@ observability.**
   with reservations, immutable orders, status history, audit logs, webhook events,
   RLS on tables and storage, and `SECURITY DEFINER` RPCs that recompute prices
   server-side and lock rows — the strongest part of the codebase.
-- Security middleware that actually exists and fails closed: CORS allowlist, CSRF,
-  rate limiting, Helmet/CSP, webhook signature verification with replay windows,
-  idempotent webhook claiming, amount and currency validation on settlement, and PII
-  masking in logs.
+- Security middleware that exists and fails closed: CORS allowlist, CSRF, rate
+  limiting, Helmet/CSP, webhook signature verification with replay windows,
+  idempotent webhook claiming, amount and currency validation on settlement, and
+  PII masking in logs.
 - Payment-mode guardrails: mock payments are structurally prohibited in production
-  builds, and PayFast signature/ITN verification is implemented rather than stubbed.
-- A broad test surface (47 unit/component + 165 Playwright specs), a release gate,
-  and four CI workflows including staging and production Cloud Run deploys.
-- Honest, detailed ops documentation and an audit document that already says "not
-  production-ready" for largely the right reasons.
+  builds, PayFast signature/ITN verification is implemented rather than stubbed, and
+  `develop` added a production guard so a forged localStorage session cannot
+  authenticate.
+- Real progress on the first-pass findings: 9 of the 12 "fixed on `develop`" rows in
+  §2b are production-quality fixes with tests, not cosmetic changes.
+- Honest documentation habits: `docs/staging/deferrals.md` records what was deferred
+  and why, and `docs/staging/item1-gate-report.md` marks unverified items
+  `PENDING-USER` instead of claiming success.
 
 **What makes it "needs work":**
-- The money paths are incomplete: no refunds, no automatic reservation cleanup, and
-  shipping that literally cannot run in production.
+- The release path is not trustworthy: stale `main`, a CI deploy target nobody uses,
+  no infrastructure as code, manual migrations, and no reproducible environment.
+- Money paths are still incomplete: no refunds, no automatic reservation cleanup,
+  and shipping prices that disagree between the quote and the charge.
 - The operational safety net is missing: no working error tracking, no metrics,
   alerts or dashboards, and no top-level client error boundary.
 - Customer-critical flows are absent: password reset, email verification, account
   area, reviews, legal pages.
-- Testing is broad but shallow and currently red; coverage on services and
-  repositories is effectively unmeasured.
-- Documentation overstates readiness in several places (static caching, PWA, Sentry,
-  carrier integration), which is the most dangerous kind of debt.
+- Assurance is partly decorative: the coverage gate ignores the new tests, and the
+  seven new unit files (while welcome) still leave services and repositories largely
+  unmeasured.
+- Accepted deferrals are still launch dependencies: live PayFast passphrase never
+  verified, Tailwind v3 advisories narrowed rather than fixed, placeholder brand
+  icons, no Google sign-in.
 
-**Rough effort shape:** Phase 0 is small and mostly decision-making. Phase 1 is the
-heavy lift and contains the true go-live blockers (shipping, refunds, scheduled
-jobs, error tracking, auth recovery, validation, legal). Phases 2–3 convert "it
-works on staging" into "we can prove it and recover from it". Phase 4 is growth.
+**Rough effort shape:** Phase 0 is now mostly bookkeeping plus two environment
+reconciliations (S/M). Phase 1 remains the heavy lift and holds the true go-live
+blockers (deployment platform, shipping price consistency, refunds, scheduled jobs,
+password reset, error tracking, validation, legal). Phases 2–3 turn "green on
+staging" into "provable and recoverable". Phase 4 is growth.
 
-**Bottom line:** The foundation and the database are strong enough to build on — do
-not rewrite them. But do not take real payments until the shipping decision is
-made, refunds exist, stale stock is cleaned automatically, errors are visible, and
-customers can recover their accounts.
-
+**Bottom line:** The engineering is better than the repository's release process.
+Do not rewrite the foundation — land `develop` on `main`, pick one deployment
+platform and version-control it, then close the money-path gaps (refunds, stale
+reservation cleanup, one shipping price) before taking real payments.
