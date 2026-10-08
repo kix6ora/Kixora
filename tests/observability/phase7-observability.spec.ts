@@ -19,6 +19,7 @@ test.describe('Kixora Phase 7: Observability, Analytics & SEO', () => {
   });
 
   test('Analytics: Verify opt-out behavior', async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem('kixora_cookie_consent', 'accepted'));
     await page.goto('/');
     
     // Open Privacy Settings via Footer

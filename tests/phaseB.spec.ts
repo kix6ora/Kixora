@@ -47,7 +47,7 @@ test.describe('Phase B: Mock Data & Payments', () => {
       process.env.NODE_ENV = 'production';
       process.env.VITE_PAYMENT_PROVIDER_MODE = 'mock';
       
-      expect(() => isPaymentConfigured()).toThrow('Payment configuration Error: Mock payment mode is strictly prohibited in production builds.');
+      expect(() => isPaymentConfigured()).toThrow('Payment configuration Error: PayFast is the only supported production payment provider.');
     } finally {
       process.env.NODE_ENV = originalNodeEnv;
       process.env.VITE_PAYMENT_PROVIDER_MODE = originalVitePayment;
