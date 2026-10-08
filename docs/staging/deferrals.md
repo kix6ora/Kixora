@@ -23,3 +23,10 @@
 - **Risk:** No impact to sandbox checkout or staging email/password authentication. Live PayFast processing remains unavailable until configured and separately verified.
 - **Prerequisite:** Set a distinct live-account passphrase in the protected production Render environment and align the live PayFast account configuration.
 - **Add later when:** A separate production-readiness gate authorizes live payment verification. Never use live checkout as part of this staging gate.
+
+## Tailwind v3 -> v4 migration — deferred
+
+- **What:** Tailwind v3 -> v4 migration deferred. 5 high + 2 moderate npm advisories (braces, chokidar, micromatch, fast-glob, postcss-selector-parser, postcss-nested) are build-time (dev) dependencies via tailwindcss <=3.4.19; not present in the production runtime. CI audit gate now checks production dependencies only. Revisit before production go-live.
+- **Why:** The flagged advisories come from the Tailwind v3 build-time dependency chain and do not ship in the production runtime.
+- **Risk:** No impact to the production runtime; build-time tooling remains on Tailwind v3 until migration.
+- **Add later when:** Tailwind v4 migration is scheduled and verified before production go-live.
