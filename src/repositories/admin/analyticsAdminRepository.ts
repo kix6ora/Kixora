@@ -203,7 +203,7 @@ export const analyticsAdminRepository = {
 
     const { data, error } = await supabase
       .from('orders')
-      .select('id, order_code, total, current_status, created_at, customer_full_name, customer_snapshot')
+      .select('id, order_code, total, current_status, created_at, customer_snapshot')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -218,8 +218,7 @@ export const analyticsAdminRepository = {
       total: Number(row.total) || 0,
       status: row.current_status || 'Processing',
       createdAt: row.created_at,
-      customerName:
-        row.customer_snapshot?.fullName || row.customer_full_name || 'Valued Collector',
+      customerName: row.customer_snapshot?.fullName || 'Valued Collector',
     }));
   },
 };
