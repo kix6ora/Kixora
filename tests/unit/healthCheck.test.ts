@@ -75,6 +75,33 @@ describe('health check endpoint', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
+  it('prefers RENDER_SERVICE_NAME for the domain label when defined', async () => {
+    const previousServiceName = process.env.RENDER_SERVICE_NAME;
+    process.env.RENDER_SERVICE_NAME = 'kixora-staging';
+    const response = createResponse();
+
+    await healthCheck({} as never, response as never, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({ domain: 'kixora-staging' });
+    if (previousServiceName === undefined) delete process.env.RENDER_SERVICE_NAME;
+    else process.env.RENDER_SERVICE_NAME = previousServiceName;
+  });
+
+  it('falls back to the built-in domain labels when RENDER_SERVICE_NAME is unset', async () => {
+    const previousServiceName = process.env.RENDER_SERVICE_NAME;
+    delete process.env.RENDER_SERVICE_NAME;
+    const response = createResponse();
+
+    await healthCheck({} as never, response as never, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      domain: process.env.NODE_ENV === 'production' ? 'kixora-production' : 'kixora-development',
+    });
+    if (previousServiceName !== undefined) process.env.RENDER_SERVICE_NAME = previousServiceName;
+  });
+
   it('returns degraded health and logs only the database error code and message', async () => {
     state.error = { code: '42501', message: 'permission denied for table profiles' };
     const response = createResponse();

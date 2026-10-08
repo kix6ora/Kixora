@@ -107,7 +107,7 @@ interface StoreContextType {
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   addPromo: (promo: Omit<PromoCode, 'id'>) => void;
   togglePromoStatus: (promoId: string) => void;
-  refreshOrders: () => Promise<void>;
+  refreshOrders: () => Promise<{ success: boolean; error?: string }>;
 
   // Feedback
   showToast: (title: string, message: string, type?: 'success' | 'info' | 'error') => void;
@@ -158,6 +158,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const [orders, setOrders] = useState<Order[]>(() => {
+    // Production builds backed by Supabase orders must never seed state from
+    // demo data or cached localStorage (D-13).
+    const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
+    const procEnv = (typeof process !== 'undefined' && process.env) || {};
+    const isProductionBuild = metaEnv.PROD === true || procEnv.NODE_ENV === 'production';
+    if (isProductionBuild && isSupabaseOrdersEnabled()) {
+      return [];
+    }
     try {
       const saved = localStorage.getItem('kixora_orders_v2');
       return saved ? JSON.parse(saved) : INITIAL_ORDERS;
@@ -842,15 +850,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     showToast('Promo Updated', 'Voucher status toggled.', 'info');
   };
 
-  const refreshOrders = async () => {
-    if (!isSupabaseOrdersEnabled() || !isSupabaseConfigured()) return;
+  const refreshOrders = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseOrdersEnabled() || !isSupabaseConfigured()) return { success: true };
     try {
-      const serverOrders = await orderRepository.getOrders();
-      if (serverOrders && serverOrders.length > 0) {
-        setOrders(serverOrders);
+      const { orders: serverOrders, error } = await orderRepository.getOrdersResult();
+      if (error) {
+        showToast('Orders Sync Failed', error, 'error');
+        return { success: false, error };
       }
-    } catch (_err) {
-      // Silently handle refresh errors
+      // A successful fetch replaces local orders even when it returns 0 rows.
+      setOrders(serverOrders);
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to refresh orders.';
+      showToast('Orders Sync Failed', message, 'error');
+      return { success: false, error: message };
     }
   };
 

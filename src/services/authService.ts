@@ -14,6 +14,53 @@ const MOCK_STORAGE_KEY = 'kixora_auth_session';
 let inMemorySession: AuthSession | null = null;
 const authListeners = new Set<(session: AuthSession | null) => void>();
 
+/**
+ * D-04: the persisted mock session must never authenticate a production build.
+ * Local dev and the Playwright mock mode (NODE_ENV=test / VITE_PLAYWRIGHT_ADMIN)
+ * keep using localStorage as before.
+ */
+function isMockAuthSessionAllowed(): boolean {
+  const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
+  const procEnv = (typeof process !== 'undefined' && process.env) || {};
+  if (metaEnv.VITE_PLAYWRIGHT_ADMIN === 'true' || procEnv.VITE_PLAYWRIGHT_ADMIN === 'true') {
+    return true;
+  }
+  // D-04 override: explicit production-auth enforcement always wins over the
+  // test-mode early return below. Accept string 'true' as well as boolean true
+  // for PROD because vi.stubEnv stores strings, and accept process.env because
+  // Vite may statically inline import.meta.env under Vitest.
+  const forceProductionAuth =
+    metaEnv.VITE_FORCE_PRODUCTION_AUTH === 'true' ||
+    procEnv.VITE_FORCE_PRODUCTION_AUTH === 'true';
+  const prodFlag =
+    metaEnv.PROD === true ||
+    (metaEnv.PROD as unknown as string) === 'true' ||
+    procEnv.PROD === 'true';
+  if (forceProductionAuth || prodFlag) {
+    return false;
+  }
+  if (metaEnv.MODE === 'test' || procEnv.NODE_ENV === 'test') {
+    return true;
+  }
+  const isProduction = metaEnv.PROD === true || procEnv.NODE_ENV === 'production';
+  return !isProduction;
+}
+
+/**
+ * Removes the persisted mock session if the current build must not trust it.
+ * Returns true when the mock session may still be used.
+ */
+function guardMockAuthStorage(): boolean {
+  if (isMockAuthSessionAllowed()) return true;
+  inMemorySession = null;
+  try {
+    localStorage.removeItem(MOCK_STORAGE_KEY);
+  } catch {
+    // Storage unavailable
+  }
+  return false;
+}
+
 function notifyAuthListeners(session: AuthSession | null) {
   authListeners.forEach(cb => {
     try {
@@ -258,7 +305,11 @@ export const authService = {
       }
     }
 
-    // Mock fallback
+    // Mock fallback — D-04: a forged localStorage session must never be
+    // returned from a production build.
+    if (!guardMockAuthStorage()) {
+      return inMemorySession;
+    }
     try {
       const stored = localStorage.getItem(MOCK_STORAGE_KEY);
       if (stored) {
@@ -311,6 +362,11 @@ export const authService = {
 
     const handler = (e: StorageEvent) => {
       if (e.key === MOCK_STORAGE_KEY) {
+        // D-04: ignore and remove persisted sessions in production builds.
+        if (!guardMockAuthStorage()) {
+          callback(null);
+          return;
+        }
         if (e.newValue) {
           try {
             callback(JSON.parse(e.newValue));

@@ -101,9 +101,13 @@ export const AdminOrders: React.FC = () => {
           <button
             onClick={async () => {
               setIsRefreshing(true);
-              await refreshOrders();
+              const result = await refreshOrders();
               setIsRefreshing(false);
-              showToast('Data Refreshed', 'Orders synchronized with vault.', 'info');
+              // Only celebrate a successful sync; refreshOrders already surfaced
+              // any failure as an error toast.
+              if (result.success) {
+                showToast('Data Refreshed', 'Orders synchronized with vault.', 'info');
+              }
             }}
             disabled={isRefreshing}
             className="p-2.5 rounded-xl bg-[#161616] text-[#888888] hover:text-white border border-[#282828] transition-all disabled:opacity-50"
