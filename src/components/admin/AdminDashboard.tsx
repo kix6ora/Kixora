@@ -24,6 +24,11 @@ import { AdminOrders } from './AdminOrders';
 import { AdminInventory } from './AdminInventory';
 import { AdminPromos } from './AdminPromos';
 import { AdminAnalytics } from './AdminAnalytics';
+import { isSupabaseAdminEnabled } from '../../config/features';
+import { useDashboardData } from './dashboard/useDashboardData';
+import { DashboardKpiCards } from './dashboard/DashboardKpiCards';
+import { DashboardRecentOrders } from './dashboard/DashboardRecentOrders';
+import { DashboardTopSelling } from './dashboard/DashboardTopSelling';
 
 type AdminNavTab = 
   | 'dashboard' 
@@ -41,7 +46,10 @@ type AdminNavTab =
 export const AdminDashboard: React.FC = () => {
   const { setCurrentView, showToast } = useStore();
   const [activeTab, setActiveTab] = useState<AdminNavTab>('dashboard');
+  const liveAdmin = isSupabaseAdminEnabled();
+  const dashboard = useDashboardData();
   const [dateRange] = useState('May 21 – May 27, 2025');
+  const rangeLabel = liveAdmin ? dashboard.rangeLabel : dateRange;
 
   // KPI Calculations matching the reference numbers with live flexibility
   const totalRevenueFormatted = 'R248,950.00';
@@ -146,6 +154,11 @@ export const AdminDashboard: React.FC = () => {
             <h1 className="font-display font-bold text-2xl sm:text-3xl text-white flex items-center gap-2">
               <span>Welcome back, Admin</span>
               <span className="text-2xl">👋</span>
+              {!liveAdmin && (
+                <span className="text-[10px] font-mono font-bold uppercase tracking-widest px-2 py-1 rounded-md bg-[#FF7A00]/15 text-[#FF7A00] border border-[#FF7A00]/30">
+                  Mock Data
+                </span>
+              )}
             </h1>
             <p className="text-xs sm:text-sm text-[#888888] mt-1 font-sans">
               Here's what's happening with your store today.
@@ -156,7 +169,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 bg-[#1A1A1A] border border-[#2C2C2C] rounded-lg text-xs font-mono text-[#CCCCCC]">
               <Calendar className="w-3.5 h-3.5 text-[#888888]" />
-              <span>{dateRange}</span>
+              <span>{rangeLabel}</span>
               <ChevronDown className="w-3 h-3 text-[#888888]" />
             </div>
 
@@ -173,6 +186,20 @@ export const AdminDashboard: React.FC = () => {
         {/* Render Active View / Tab */}
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
+            {liveAdmin && dashboard.loading && (
+              <div className="p-6 rounded-2xl bg-[#161616] border border-[#262626] text-xs font-mono text-[#888888]">
+                Loading live dashboard data…
+              </div>
+            )}
+            {liveAdmin && !dashboard.loading && dashboard.error && (
+              <div className="p-6 rounded-2xl bg-[#161616] border border-[#EF4444]/40 text-xs font-mono text-[#EF4444]">
+                Failed to load live dashboard data: {dashboard.error}
+              </div>
+            )}
+            {liveAdmin ? (
+              <DashboardKpiCards metrics={dashboard.metrics} onViewInventory={() => setActiveTab('inventory')} />
+            ) : (
+            <>
             {/* Top 5 Metric Cards matching exact Reference Image */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               
@@ -274,6 +301,8 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
             </div>
+            </>
+            )}
 
             {/* Lower Grid matching Reference Image */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -357,6 +386,13 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {liveAdmin ? (
+                <>
+                  <DashboardRecentOrders orders={dashboard.recentOrders} onViewAll={() => setActiveTab('orders')} />
+                  <DashboardTopSelling products={dashboard.topSelling} onViewAll={() => setActiveTab('products')} />
+                </>
+              ) : (
+              <>
               {/* Recent Orders Table matching reference image */}
               <div className="lg:col-span-4 p-6 rounded-2xl bg-[#161616] border border-[#262626] space-y-4">
                 <div className="flex items-center justify-between">
@@ -433,6 +469,8 @@ export const AdminDashboard: React.FC = () => {
                   ))}
                 </div>
               </div>
+              </>
+              )}
 
             </div>
           </div>
