@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import express from 'express';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { mountProductionStaticAssets } from '../../src/server/staticAssets';
@@ -58,5 +58,40 @@ describe('production static assets', () => {
 
     expect(response.status).toBe(404);
     expect(await response.text()).not.toContain('SPA');
+  });
+
+  it('serves every manifest icon over HTTP with the declared content type', async () => {
+    const manifest = JSON.parse(readFileSync(path.join(publicPath, 'manifest.json'), 'utf8')) as {
+      icons: Array<{ src: string; type: string }>;
+    };
+    expect(manifest.icons.length).toBeGreaterThan(0);
+
+    staticRoot = mkdtempSync(path.join(tmpdir(), 'kixora-static-test-'));
+    writeFileSync(path.join(staticRoot, 'index.html'), '<html>SPA</html>');
+    // Serve the real public/ icons so the assertions cover the shipped files.
+    manifest.icons.forEach(icon => {
+      copyFileSync(path.join(publicPath, icon.src.slice(1)), path.join(staticRoot!, icon.src.slice(1)));
+    });
+
+    const app = express();
+    mountProductionStaticAssets(app, staticRoot);
+    server = app.listen(0, '127.0.0.1');
+    await new Promise<void>(resolve => server?.once('listening', resolve));
+
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    const origin = `http://127.0.0.1:${address.port}`;
+
+    for (const icon of manifest.icons) {
+      const response = await fetch(`${origin}${icon.src}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain(icon.type);
+    }
+
+    // A concrete missing icon must 404 with a body that is not the SPA index.
+    const missing = await fetch(`${origin}/icon-999.png`);
+    const indexHtml = readFileSync(path.join(staticRoot, 'index.html'), 'utf8');
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).not.toBe(indexHtml);
   });
 });
