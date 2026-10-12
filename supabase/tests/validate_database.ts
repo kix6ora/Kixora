@@ -8,6 +8,7 @@ function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
   let current = '';
   let inDollarQuote = false;
+  let dollarTag = '';
   let inSingleQuote = false;
   let inDoubleQuote = false;
   let inLineComment = false;
@@ -42,11 +43,31 @@ function splitSqlStatements(sql: string): string[] {
       continue;
     }
 
-    // Dollar quote ($$)
-    if (!inSingleQuote && !inDoubleQuote && char === '$' && nextChar === '$') {
-      inDollarQuote = !inDollarQuote;
-      current += '$$';
-      i++;
+    // Dollar-quoted string: $$...$$ or $tag$...$tag$ (e.g. $function$).
+    // The tag must be tracked so an inner semicolon inside a PL/pgSQL body is
+    // not mistaken for a statement terminator.
+    if (!inSingleQuote && !inDoubleQuote && char === '$') {
+      let j = i + 1;
+      while (j < sql.length && /[A-Za-z0-9_]/.test(sql[j])) j++;
+      if (j < sql.length && sql[j] === '$') {
+        const tag = sql.slice(i, j + 1);
+        if (!inDollarQuote) {
+          inDollarQuote = true;
+          dollarTag = tag;
+          current += tag;
+          i = j;
+          continue;
+        }
+        if (tag === dollarTag) {
+          inDollarQuote = false;
+          dollarTag = '';
+          current += tag;
+          i = j;
+          continue;
+        }
+      }
+      // Not the opening/closing delimiter; emit the '$' as literal content.
+      current += char;
       continue;
     }
 
@@ -111,7 +132,9 @@ async function runDatabaseValidation() {
         parse(stmt);
       } catch (err: any) {
         const lowerStmt = stmt.toLowerCase();
-        if (!lowerStmt.includes('function') && 
+        if (!lowerStmt.startsWith('grant') &&
+            !lowerStmt.startsWith('revoke') &&
+            !lowerStmt.includes('function') && 
             !lowerStmt.includes('trigger') && 
             !lowerStmt.includes('policy') && 
             !lowerStmt.includes('enable row level security') &&

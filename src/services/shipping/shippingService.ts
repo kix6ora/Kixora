@@ -85,7 +85,12 @@ export class ShippingService {
   }
 
   /**
-   * Calculates live and fallback shipping quotes across available couriers
+   * Calculates live and fallback shipping quotes across available couriers.
+   *
+   * Production decision: when NODE_ENV is "production", do NOT throw and do NOT
+   * reach out to the carrier. Return a single deterministic flat-rate quote in
+   * ZAR (flat-rate table above). This intentionally surfaces a graceful fallback
+   * rather than an outage banner / crash, so end users still get prices.
    */
   async calculateRates(request: ShippingRateRequest): Promise<ShippingRateQuote[]> {
     if (process.env.NODE_ENV === 'production') {
