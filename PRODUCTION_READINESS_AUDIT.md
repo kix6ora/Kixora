@@ -26,7 +26,7 @@ This audit therefore remains a “not verified for production” decision until 
   - CSRF protection setup in [server.ts](server.ts)
   - rate limiting in [server.ts](server.ts)
   - strict role extraction from trusted app metadata in [src/utils/roleUtils.ts](src/utils/roleUtils.ts) and [src/services/authService.ts](src/services/authService.ts)
-  - RLS and storage policy hardening in [supabase/migrations/0022_storage_setup.sql](supabase/migrations/0022_storage_setup.sql) and [supabase/migrations/0023_rls_hardening.sql](supabase/migrations/0023_rls_hardening.sql)
+  - RLS and storage policy hardening in [supabase/migrations/0024_storage_setup.sql](supabase/migrations/0024_storage_setup.sql) and [supabase/migrations/0025_rls_hardening.sql](supabase/migrations/0025_rls_hardening.sql)
 
 - Mock-mode validation is complete and passing:
   - Playwright mock-mode execution was run with the project’s safe server bootstrap and production-safe defaults
@@ -81,7 +81,7 @@ Affected areas:
 
 ### B. Real Supabase migration enforcement
 Not verified:
-- whether the RLS policies in [supabase/migrations/0022_storage_setup.sql](supabase/migrations/0022_storage_setup.sql) and [supabase/migrations/0023_rls_hardening.sql](supabase/migrations/0023_rls_hardening.sql) actually work in the live project
+- whether the RLS policies in [supabase/migrations/0024_storage_setup.sql](supabase/migrations/0024_storage_setup.sql) and [supabase/migrations/0025_rls_hardening.sql](supabase/migrations/0025_rls_hardening.sql) actually work in the live project
 - whether customer/admin/service-role boundaries hold in production data
 - whether storage access policies are correctly enforced
 

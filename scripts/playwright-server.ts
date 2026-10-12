@@ -53,5 +53,13 @@ process.env.NODE_ENV = 'test';
 // webServer probe timed out after 120s and the release gate failed.
 process.env.PORT = port;
 
+// The release gate (and `--reporter=json`) reads Playwright's stdout, which is
+// pure JSON only if this webServer does not write to its own stdout. Playwright
+// forwards the webServer's stdout to its stdout and its stderr to its stderr,
+// so route all server stdout to stderr to keep the captured JSON clean.
+const redirectTarget = process.stderr;
+(process.stdout as unknown as { write: (...args: unknown[]) => boolean }).write = (...args: unknown[]) =>
+  (redirectTarget.write as unknown as (...args: unknown[]) => boolean)(...args);
+
 await import('../server.ts');
 export { };
