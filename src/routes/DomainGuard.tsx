@@ -12,7 +12,7 @@ export interface DomainInspectionResult {
 /**
  * Pure function to inspect current hostname and determine domain classification.
  */
-export function inspectHostname(hostnameInput?: string, _searchParamsInput?: string): DomainInspectionResult {
+export function inspectHostname(hostnameInput?: string, _searchParamsInput?: string, _metaEnvInput?: Record<string, any>): DomainInspectionResult {
   const hostname = (
     hostnameInput ??
     (typeof window !== 'undefined' ? window.location.hostname : 'kixora.com')
@@ -20,8 +20,13 @@ export function inspectHostname(hostnameInput?: string, _searchParamsInput?: str
   const searchParams = new URLSearchParams(
     _searchParamsInput ?? (typeof window !== 'undefined' ? window.location.search : '')
   );
-  const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
+  const metaEnv =
+    _metaEnvInput ??
+    ((typeof import.meta !== 'undefined' && (import.meta as any).env) || {});
+  // Roadmap 0.3: VITE_PLAYWRIGHT_ADMIN + ?domain=admin is a test-only bypass and
+  // must be dead in a production build regardless of how the flag got inlined.
   const isTestAdminRoute =
+    !metaEnv.PROD &&
     metaEnv.VITE_PLAYWRIGHT_ADMIN === 'true' &&
     searchParams.get('domain') === 'admin';
   const { adminDomain } = getEnvConfig();
