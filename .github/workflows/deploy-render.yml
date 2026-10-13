@@ -1,0 +1,97 @@
+name: Deploy (Render)
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trigger Render deploy hooks (staging)
+        env:
+          RENDER_DEPLOY_HOOK_STAGING_CUSTOMER: ${{ secrets.RENDER_DEPLOY_HOOK_STAGING_CUSTOMER }}
+          RENDER_DEPLOY_HOOK_STAGING_ADMIN: ${{ secrets.RENDER_DEPLOY_HOOK_STAGING_ADMIN }}
+        run: |
+          triggered=false
+          if [ -n "$RENDER_DEPLOY_HOOK_STAGING_CUSTOMER" ]; then
+            echo "Triggering customer staging deploy hook..."
+            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_STAGING_CUSTOMER"
+            triggered=true
+          else
+            echo "RENDER_DEPLOY_HOOK_STAGING_CUSTOMER not set; relying on Render auto-deploy for kixora-staging."
+          fi
+          if [ -n "$RENDER_DEPLOY_HOOK_STAGING_ADMIN" ]; then
+            echo "Triggering admin staging deploy hook..."
+            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_STAGING_ADMIN"
+            triggered=true
+          else
+            echo "RENDER_DEPLOY_HOOK_STAGING_ADMIN not set; relying on Render auto-deploy for kixora-admin-staging."
+          fi
+          echo "triggered=$triggered"
+
+      - name: Wait for Render staging deploys
+        run: node scripts/staging/wait-for-render-deploy.mjs
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      CUSTOMER_HEALTH_URL: ${{ vars.RENDER_PRODUCTION_CUSTOMER_HEALTH_URL }}
+      ADMIN_HEALTH_URL: ${{ vars.RENDER_PRODUCTION_ADMIN_HEALTH_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trigger Render deploy hooks (production)
+        env:
+          RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER: ${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER }}
+          RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN: ${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN }}
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER" ]; then
+            echo "Triggering customer production deploy hook..."
+            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER"
+          else
+            echo "RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER not set; relying on Render auto-deploy."
+          fi
+          if [ -n "$RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN" ]; then
+            echo "Triggering admin production deploy hook..."
+            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN"
+          else
+            echo "RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN not set; relying on Render auto-deploy."
+          fi
+
+      - name: Verify production health endpoints
+        run: |
+          if [ -z "$CUSTOMER_HEALTH_URL" ]; then
+            echo "vars.RENDER_PRODUCTION_CUSTOMER_HEALTH_URL is not set; skipping production health poll."
+            echo "Set it to the production customer /api/health URL to enforce commit-SHA verification."
+            exit 0
+          fi
+          expected="$(git rev-parse --short HEAD)"
+          echo "Expecting commit $expected"
+          for attempt in $(seq 1 20); do
+            echo "Attempt $attempt/20..."
+            ok=true
+            for url in "$CUSTOMER_HEALTH_URL" ${ADMIN_HEALTH_URL:+$ADMIN_HEALTH_URL}; do
+              body="$(curl -fsS --max-time 15 "$url" || true)"
+              echo "$url -> $body"
+              echo "$body" | grep -q "\"commit\":\"$expected\"" || ok=false
+            done
+            if [ "$ok" = true ]; then
+              echo "Production deploy verified at $expected."
+              exit 0
+            fi
+            if [ "$attempt" -lt 20 ]; then sleep 30; fi
+          done
+          echo "Production services did not reach $expected. Check Render branch/auto-deploy and manually deploy latest commit."
+          exit 1
