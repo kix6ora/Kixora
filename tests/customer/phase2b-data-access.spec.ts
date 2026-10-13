@@ -317,6 +317,33 @@ test.describe('Phase 2B: Cart, Wishlist & Order Data Access Layer', () => {
     // Test fallback / mock placement when Supabase checkout flag is disabled
     const fallbackResult = await checkoutService.placeOrderAtomic({
       cartId: 'cart-123',
+      cartItems: [
+        {
+          id: 'cart-item-test-1',
+          sneaker: {
+            id: 'sneaker-test-1',
+            name: 'Test Sneaker',
+            brand: 'Nike',
+            category: 'Low-Top',
+            gender: 'Unisex',
+            price: 1500,
+            description: 'Test sneaker',
+            image: '',
+            images: [],
+            gallery: [],
+            sizes: [{ size: 9, stock: 10 }],
+            colorway: '',
+            releaseYear: 2024,
+            sku: 'TEST-001',
+            story: '',
+            rating: 5,
+            reviewsCount: 0,
+            salesCount: 0,
+          },
+          selectedSize: 9,
+          quantity: 1,
+        },
+      ],
       customerInfo: {
         email: 'buyer@vault.co.za',
         fullName: 'Sneaker Head',
@@ -331,6 +358,54 @@ test.describe('Phase 2B: Cart, Wishlist & Order Data Access Layer', () => {
     });
     expect(fallbackResult.success).toBe(true);
     expect(fallbackResult.orderCode).toBeDefined();
+    expect(fallbackResult.subtotal).toBe(1500);
+    expect(fallbackResult.shippingFee).toBe(200);
+    expect(fallbackResult.total).toBe(1700);
+
+    const freeShippingResult = await checkoutService.placeOrderAtomic({
+      cartId: 'cart-123',
+      cartItems: [
+        {
+          id: 'cart-item-test-2',
+          sneaker: {
+            id: 'sneaker-test-2',
+            name: 'Test Sneaker',
+            brand: 'Nike',
+            category: 'Low-Top',
+            gender: 'Unisex',
+            price: 2500,
+            description: 'Test sneaker',
+            image: '',
+            images: [],
+            gallery: [],
+            sizes: [{ size: 9, stock: 10 }],
+            colorway: '',
+            releaseYear: 2024,
+            sku: 'TEST-002',
+            story: '',
+            rating: 5,
+            reviewsCount: 0,
+            salesCount: 0,
+          },
+          selectedSize: 9,
+          quantity: 1,
+        },
+      ],
+      customerInfo: {
+        email: 'buyer@vault.co.za',
+        fullName: 'Sneaker Head',
+        street: '10 Main Road',
+        city: 'Johannesburg',
+        state: 'Gauteng',
+        zip: '2000',
+        country: 'South Africa',
+      },
+      paymentMethod: 'Credit Card',
+      shippingMethod: 'Express',
+    });
+    expect(freeShippingResult.success).toBe(true);
+    expect(freeShippingResult.shippingFee).toBe(0);
+    expect(freeShippingResult.total).toBe(2500);
   });
 
 });
