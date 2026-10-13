@@ -11,6 +11,7 @@ const envKeys = [
   'PAYFAST_PASSPHRASE',
   'SHIPPING_WEBHOOK_SECRET',
   'CORS_ALLOWED_ORIGINS',
+  'VITE_PUBLIC_SITE_URL',
 ] as const;
 
 test.describe('Phase 2: Production Security Gates', () => {
@@ -49,6 +50,7 @@ test.describe('Phase 2: Production Security Gates', () => {
       CUSTOMER_ORIGIN: 'https://kixora.com',
       ADMIN_ORIGIN: 'https://admin.kixora.com',
       CORS_ALLOWED_ORIGINS: 'https://kixora.com,https://admin.kixora.com',
+      VITE_PUBLIC_SITE_URL: 'https://kixora.com',
     });
 
     expect(validateProductionEnv()).toEqual({ valid: true, errors: [] });

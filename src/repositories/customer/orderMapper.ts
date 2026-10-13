@@ -115,8 +115,14 @@ export const mapOrderRowToOrder = (row: OrderHydratedRow): Order => {
     };
   });
 
-  const history = row.order_status_history || row.order_events || [];
-  const timeline = history.map(evt => ({
+  // D-13: the legacy `order_events` relation has no table in supabase/migrations,
+  // so events always default to [] and never feed the timeline. The timeline is
+  // built from order_status_history and shipments instead.
+  const events = row.order_events || [];
+  const statusHistory = row.order_status_history || [];
+  const shipmentRows = row.shipments || [];
+
+  const timeline = statusHistory.map(evt => ({
     id: evt.id,
     title: evt.title,
     timestamp: new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -124,7 +130,23 @@ export const mapOrderRowToOrder = (row: OrderHydratedRow): Order => {
     completed: true,
   }));
 
-  if (timeline.length === 0) {
+  // When no status history exists, derive tracking milestones from shipments.
+  if (timeline.length === 0 && shipmentRows.length > 0) {
+    shipmentRows.forEach((shipment, index) => {
+      const shippedAt = shipment.created_at ? new Date(shipment.created_at) : null;
+      timeline.push({
+        id: shipment.id || `shipment-${index}`,
+        title: 'Shipped',
+        timestamp: shippedAt && !Number.isNaN(shippedAt.getTime())
+          ? shippedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : 'Just now',
+        description: `Tracking ${shipment.tracking_number || 'pending'} via ${shipment.carrier || 'RAM Hand-to-Hand'}`,
+        completed: true,
+      });
+    });
+  }
+
+  if (timeline.length === 0 && events.length === 0) {
     timeline.push({
       id: 'default-event',
       title: 'Order Placed',

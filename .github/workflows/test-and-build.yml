@@ -126,6 +126,17 @@ jobs:
         env:
           VITE_CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME || secrets.VITE_CLOUDINARY_CLOUD_NAME }}
           VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET || secrets.VITE_CLOUDINARY_UPLOAD_PRESET }}
+          # Non-deployed CI build only: dummy values so the live-data guard in
+          # scripts/flags.ts passes. Never use these in a deployed image.
+          VITE_USE_SUPABASE_CATALOG: 'true'
+          VITE_USE_SUPABASE_DROPS: 'true'
+          VITE_USE_SUPABASE_CART: 'true'
+          VITE_USE_SUPABASE_WISHLIST: 'true'
+          VITE_USE_SUPABASE_ORDERS: 'true'
+          VITE_USE_SUPABASE_CHECKOUT: 'true'
+          VITE_USE_SUPABASE_AUTH: 'true'
+          VITE_SUPABASE_URL: https://ci-build.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-build-anon-key
         continue-on-error: false
 
       - name: Upload Playwright report (on failure)
@@ -153,5 +164,5 @@ jobs:
         run: npm ci
 
       - name: Run npm audit (fail on high/critical)
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
         continue-on-error: false

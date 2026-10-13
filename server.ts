@@ -87,8 +87,8 @@ async function startServer() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.google-analytics.com", "https://accounts.google.com"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: buildCspImageSources(),
         connectSrc: [
           ...buildCspConnectSources(process.env.VITE_SNEAKER_MODEL_BASE_URL),
@@ -96,7 +96,7 @@ async function startServer() {
         ],
         workerSrc: buildCspWorkerSources(),
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        frameSrc: ["'self'", "https://accounts.google.com"],
+        frameSrc: ["'self'"],
         frameAncestors,
         formAction: ["'self'", "https://sandbox.payfast.co.za", "https://www.payfast.co.za"],
         objectSrc: ["'none'"],

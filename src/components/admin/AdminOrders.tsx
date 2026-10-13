@@ -3,9 +3,11 @@ import { useStore, formatPrice } from '../../context/StoreContext';
 import { OrderStatus } from '../../types';
 import { Search, Clock, Eye, RefreshCw, FileOutput, ShieldCheck, Truck, Package, Check } from 'lucide-react';
 import { adminOrderService } from '../../services/adminOrderService';
-import { googleDriveService } from '../../services/googleDriveService';
-import { useGoogleAuth } from '../../hooks/useGoogleAuth';
+import { generateOrderCSV } from '../../utils/orderCsv';
 import { authService } from '../../services/authService';
+import { isSupabaseOrdersEnabled } from '../../config/features';
+import { isSupabaseConfigured } from '../../lib/supabase';
+import { orderAdminRepository } from '../../repositories/admin/orderAdminRepository';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const AdminOrders: React.FC = () => {
@@ -14,7 +16,6 @@ export const AdminOrders: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isReconciling, setIsReconciling] = useState<string | null>(null);
   const [isCleaning, setIsCleaning] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
@@ -58,10 +59,6 @@ export const AdminOrders: React.FC = () => {
       setIsBatchProcessing(false);
     }
   };
-
-  const { token, requestToken, isAuthenticated } = useGoogleAuth([
-    'https://www.googleapis.com/auth/drive.file'
-  ]);
 
   const filteredOrders = orders.filter(o => {
     const matchSearch =
@@ -107,9 +104,13 @@ export const AdminOrders: React.FC = () => {
           <button
             onClick={async () => {
               setIsRefreshing(true);
-              await refreshOrders();
+              const result = await refreshOrders();
               setIsRefreshing(false);
-              showToast('Data Refreshed', 'Orders synchronized with vault.', 'info');
+              // Only celebrate a successful sync; refreshOrders already surfaced
+              // any failure as an error toast.
+              if (result.success) {
+                showToast('Data Refreshed', 'Orders synchronized with vault.', 'info');
+              }
             }}
             disabled={isRefreshing}
             className="p-2.5 rounded-xl bg-[#161616] text-[#888888] hover:text-white border border-[#282828] transition-all disabled:opacity-50"
@@ -136,42 +137,30 @@ export const AdminOrders: React.FC = () => {
             EXPIRE STALE
           </button>
 
-          {!isAuthenticated ? (
-            <button
-              onClick={requestToken}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-white/5 text-white border border-white/10 hover:bg-white/10 transition-all"
-            >
-              <RefreshCw className="w-3 h-3" />
-              CONNECT DRIVE
-            </button>
-          ) : (
-            <button
-              onClick={async () => {
-                if (!token) return;
-                setIsExporting(true);
-                try {
-                  const csv = googleDriveService.generateOrderCSV(orders);
-                  const fileName = `Kixora_Reconciliation_${new Date().toISOString().split('T')[0]}.csv`;
-                  const res = await googleDriveService.uploadReport(token, fileName, csv, 'text/csv');
-                  if (res.success) {
-                    showToast('Export Success', 'Report uploaded to Google Drive.', 'success');
-                    if (res.webViewLink) window.open(res.webViewLink, '_blank');
-                  } else {
-                    throw new Error(res.error);
-                  }
-                } catch (err: any) {
-                  showToast('Export Failed', err.message, 'error');
-                } finally {
-                  setIsExporting(false);
-                }
-              }}
-              disabled={isExporting}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-[#3B82F6]/10 text-[#3B82F6] border border-[#3B82F6]/30 hover:bg-[#3B82F6]/20 disabled:opacity-50 transition-all"
-            >
-              <FileOutput className={`w-3 h-3 ${isExporting ? 'animate-spin' : ''}`} />
-              EXPORT TO DRIVE
-            </button>
-          )}
+          <button
+            onClick={() => {
+              try {
+                const csv = generateOrderCSV(orders);
+                const fileName = `Kixora_Reconciliation_${new Date().toISOString().split('T')[0]}.csv`;
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                showToast('Export Ready', 'CSV report downloaded.', 'success');
+              } catch (err: any) {
+                showToast('Export Failed', err.message, 'error');
+              }
+            }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-[#3B82F6]/10 text-[#3B82F6] border border-[#3B82F6]/30 hover:bg-[#3B82F6]/20 transition-all"
+          >
+            <FileOutput className="w-3 h-3" />
+            DOWNLOAD CSV
+          </button>
 
           <div className="h-6 w-[1px] bg-[#282828] mx-1" />
 
@@ -332,7 +321,23 @@ export const AdminOrders: React.FC = () => {
 
                     <select
                       value={order.status}
-                      onChange={e => updateOrderStatus(order.id, e.target.value as OrderStatus)}
+                      onChange={async (e) => {
+                        const newStatus = e.target.value as OrderStatus;
+                        if (!isSupabaseOrdersEnabled() || !isSupabaseConfigured()) {
+                          updateOrderStatus(order.id, newStatus);
+                          return;
+                        }
+                        try {
+                          const user = await authService.getCurrentUser();
+                          await orderAdminRepository.transitionOrderStatus(order.id, newStatus, undefined, undefined, user?.id);
+                          const res = await refreshOrders();
+                          if (res.success) {
+                            showToast('Order Updated', `Order status updated to ${newStatus}.`, 'success');
+                          }
+                        } catch (err: any) {
+                          showToast('Update Failed', err?.message || 'Failed to update order status.', 'error');
+                        }
+                      }}
                       className="bg-[#1F1F1F] border border-[#2D2D2D] text-xs text-white rounded-lg px-2 py-1 font-mono focus:outline-none focus:border-[#FF7A00]"
                     >
                       <option value="Pending">Pending</option>

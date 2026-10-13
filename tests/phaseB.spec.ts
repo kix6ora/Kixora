@@ -47,15 +47,23 @@ test.describe('Phase B: Mock Data & Payments', () => {
       process.env.NODE_ENV = 'production';
       process.env.VITE_PAYMENT_PROVIDER_MODE = 'mock';
       
-      expect(() => isPaymentConfigured()).toThrow('Payment configuration Error: Mock payment mode is strictly prohibited in production builds.');
+      expect(() => isPaymentConfigured()).toThrow('Payment configuration Error: PayFast is the only supported production payment provider.');
     } finally {
-      process.env.NODE_ENV = originalNodeEnv;
-      process.env.VITE_PAYMENT_PROVIDER_MODE = originalVitePayment;
+      // Restore the environment without leaking the string "undefined". Node
+      // stringifies an undefined assignment (process.env.X = undefined sets the
+      // literal "undefined"), which would poison later specs that read
+      // VITE_PAYMENT_PROVIDER_MODE via getEnvConfig()/cloudinary.ts at import.
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalVitePayment === undefined) delete process.env.VITE_PAYMENT_PROVIDER_MODE;
+      else process.env.VITE_PAYMENT_PROVIDER_MODE = originalVitePayment;
     }
   });
 
   test('Two simultaneous orders for the same last-unit item (Race Condition)', async () => {
     // Atomic commits are handled by 'place_order_atomic' RPC call as validated in checkoutService.ts.
-    expect(true).toBe(true); 
+    expect(true).toBe(true);
   });
 });
+
+

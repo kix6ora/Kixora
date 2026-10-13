@@ -149,7 +149,12 @@ export const wishlistRepository = {
     }
 
     const uniqueIds = Array.from(new Set(guestProductIds.filter(Boolean)));
-    const inserts = uniqueIds.map(productId => ({
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const validIds = uniqueIds.filter((id) => uuidRe.test(id));
+    if (validIds.length === 0) {
+      return;
+    }
+    const inserts = validIds.map(productId => ({
       user_id: userId,
       product_id: productId,
     }));
