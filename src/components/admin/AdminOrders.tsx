@@ -5,6 +5,9 @@ import { Search, Clock, Eye, RefreshCw, FileOutput, ShieldCheck, Truck, Package,
 import { adminOrderService } from '../../services/adminOrderService';
 import { generateOrderCSV } from '../../utils/orderCsv';
 import { authService } from '../../services/authService';
+import { isSupabaseOrdersEnabled } from '../../config/features';
+import { isSupabaseConfigured } from '../../lib/supabase';
+import { orderAdminRepository } from '../../repositories/admin/orderAdminRepository';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const AdminOrders: React.FC = () => {
@@ -318,7 +321,23 @@ export const AdminOrders: React.FC = () => {
 
                     <select
                       value={order.status}
-                      onChange={e => updateOrderStatus(order.id, e.target.value as OrderStatus)}
+                      onChange={async (e) => {
+                        const newStatus = e.target.value as OrderStatus;
+                        if (!isSupabaseOrdersEnabled() || !isSupabaseConfigured()) {
+                          updateOrderStatus(order.id, newStatus);
+                          return;
+                        }
+                        try {
+                          const user = await authService.getCurrentUser();
+                          await orderAdminRepository.transitionOrderStatus(order.id, newStatus, undefined, undefined, user?.id);
+                          const res = await refreshOrders();
+                          if (res.success) {
+                            showToast('Order Updated', `Order status updated to ${newStatus}.`, 'success');
+                          }
+                        } catch (err: any) {
+                          showToast('Update Failed', err?.message || 'Failed to update order status.', 'error');
+                        }
+                      }}
                       className="bg-[#1F1F1F] border border-[#2D2D2D] text-xs text-white rounded-lg px-2 py-1 font-mono focus:outline-none focus:border-[#FF7A00]"
                     >
                       <option value="Pending">Pending</option>
