@@ -163,6 +163,13 @@ export const authService = {
       }
     }
 
+    const isProduction = (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD) ||
+      (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production');
+
+    if (isProduction) {
+      return { user: null, session: null, error: 'Authentication service unavailable. Please try again later.' };
+    }
+
     // Mock fallback mode
     const mockUser: AuthUser = {
       id: `usr_${Date.now()}`,
