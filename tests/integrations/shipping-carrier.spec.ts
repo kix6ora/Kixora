@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { shippingService } from '../../src/services/shipping/shippingService';
-import { TheCourierGuyDriver } from '../../src/services/shipping/carrierDrivers';
+import { SimulatedCourierGuyDriver } from '../../src/services/shipping/carrierDrivers';
 import { ShippingRateRequest, ShippingLabelRequest } from '../../src/services/shipping/carrierTypes';
 
 test.describe('Phase 9: Shipping Carrier Integration', () => {
@@ -46,7 +46,7 @@ test.describe('Phase 9: Shipping Carrier Integration', () => {
   });
 
   test('SHIP-03: The Courier Guy driver generates valid waybill & tracking label', async () => {
-    const driver = new TheCourierGuyDriver();
+    const driver = new SimulatedCourierGuyDriver();
     const labelReq: ShippingLabelRequest = {
       orderId: 'ord-test-001',
       orderCode: 'KXO-7788',

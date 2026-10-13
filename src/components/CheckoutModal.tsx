@@ -14,6 +14,7 @@ import {
 import { motion } from 'motion/react';
 import { getOptimizedImageUrl } from '../lib/cloudinary';
 import { submitPayFastForm } from '../utils/payfastForm';
+import { calculateShipping } from '../services/shipping/flatRate';
 
 export const CheckoutModal: React.FC = () => {
   const { 
@@ -50,7 +51,8 @@ export const CheckoutModal: React.FC = () => {
 
   const subtotal = cart.reduce((sum, item) => sum + item.sneaker.price * item.quantity, 0);
   const discount = appliedPromo ? (subtotal * appliedPromo.discountPercent) / 100 : 0;
-  const shippingFee = subtotal >= 2000 ? 0 : 150;
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const shippingFee = calculateShipping(subtotal - discount, itemCount);
   const total = subtotal - discount + shippingFee;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

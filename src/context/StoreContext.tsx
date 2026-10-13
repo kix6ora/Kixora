@@ -27,6 +27,7 @@ import { catalogAdapter } from '../context/adapters/catalogAdapter';
 import { cartAdapter } from '../context/adapters/cartAdapter';
 import { wishlistAdapter } from '../context/adapters/wishlistAdapter';
 import { isSupabaseCatalogEnabled, isSupabaseDropsEnabled, isSupabaseCartEnabled, isSupabaseWishlistEnabled, isSupabaseOrdersEnabled } from '../config/features';
+import { calculateShipping } from '../services/shipping/flatRate';
 
 export const formatPrice = (amount: number): string => {
   return `R${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -656,7 +657,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   ): Promise<Order> => {
     const subtotal = cart.reduce((sum, item) => sum + item.sneaker.price * item.quantity, 0);
     const discount = appliedPromo ? (subtotal * appliedPromo.discountPercent) / 100 : 0;
-    const shippingFee = subtotal >= 2000 || cart.length === 0 ? 0 : 150;
+    const itemCount = cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+    const shippingFee = calculateShipping(subtotal - discount, itemCount);
     const tax = 0; // Inclusive VAT
     const calculatedTotal = Math.max(0, subtotal - discount + shippingFee + tax);
 

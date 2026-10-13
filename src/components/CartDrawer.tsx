@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore, formatPrice } from '../context/StoreContext';
+import { calculateShipping, FREE_SHIPPING_THRESHOLD } from '../services/shipping/flatRate';
 import { 
   X, 
   Trash2, 
@@ -31,10 +32,12 @@ export const CartDrawer: React.FC = () => {
 
   const subtotal = cart.reduce((sum, item) => sum + item.sneaker.price * item.quantity, 0);
   const discount = appliedPromo ? (subtotal * appliedPromo.discountPercent) / 100 : 0;
-  const freeShippingThreshold = 2000;
-  const shippingFee = subtotal >= freeShippingThreshold || cart.length === 0 ? 0 : 150;
+  const subtotalAfterDiscount = subtotal - discount;
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const freeShippingThreshold = FREE_SHIPPING_THRESHOLD;
+  const shippingFee = calculateShipping(subtotalAfterDiscount, itemCount);
   const total = subtotal - discount + shippingFee;
-  const progressPercent = Math.min(100, (subtotal / freeShippingThreshold) * 100);
+  const progressPercent = Math.min(100, (subtotalAfterDiscount / freeShippingThreshold) * 100);
 
   const handleApplyPromo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,10 +83,10 @@ export const CartDrawer: React.FC = () => {
           <div className="px-6 py-3 bg-[#1A1A1A] border-b border-[#262626] space-y-1.5">
             <div className="flex items-center justify-between text-[11px] font-mono">
               <span className="text-[#888888]">
-                {subtotal >= freeShippingThreshold ? (
+                {subtotalAfterDiscount > freeShippingThreshold ? (
                   <span className="text-[#10B981] font-bold">✓ Free Nationwide Shipping Unlocked!</span>
                 ) : (
-                  <span>Add {formatPrice(freeShippingThreshold - subtotal)} for Free Shipping</span>
+                  <span>Add {formatPrice(freeShippingThreshold - subtotalAfterDiscount)} for Free Shipping</span>
                 )}
               </span>
               <span className="font-bold text-[#FF7A00]">{Math.round(progressPercent)}%</span>
