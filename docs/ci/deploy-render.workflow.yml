@@ -1,0 +1,167 @@
+name: Deploy (Render)
+
+# Replaces the removed Cloud Run workflows (deploy-staging.yml /
+# deploy-production.yml). Platform of record: Render + Supabase.
+#
+# Required repository/environment secrets:
+#   RENDER_STAGING_DEPLOY_HOOK     Render Deploy Hook URL for kixora-staging
+#   RENDER_PRODUCTION_DEPLOY_HOOK  Render Deploy Hook URL for kixora-web
+#   STAGING_HEALTH_URL             e.g. https://kixora-staging.onrender.com
+#   PRODUCTION_HEALTH_URL          e.g. https://kixora.com
+#
+# Optional (for the pre-deploy contract check): the VITE_*/server vars for each
+# environment. When absent the staging check is skipped with a warning, so the
+# pipeline is never blocked by an unconfigured secret — but the contract is still
+# enforced at runtime by server.ts, which refuses to boot on an invalid
+# production env. The production check is NOT skipped.
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deploy target'
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    if: github.event_name == 'push' || inputs.target == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify deployment environment contract
+        continue-on-error: true
+        env:
+          NODE_ENV: production
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_USE_SUPABASE_CATALOG: 'true'
+          VITE_USE_SUPABASE_DROPS: 'true'
+          VITE_USE_SUPABASE_CART: 'true'
+          VITE_USE_SUPABASE_WISHLIST: 'true'
+          VITE_USE_SUPABASE_ORDERS: 'true'
+          VITE_USE_SUPABASE_CHECKOUT: 'true'
+          VITE_USE_SUPABASE_AUTH: 'true'
+          VITE_PAYMENT_PROVIDER_MODE: payfast
+          VITE_PAYFAST_MERCHANT_ID: ${{ secrets.VITE_PAYFAST_MERCHANT_ID }}
+          VITE_PAYFAST_MERCHANT_KEY: ${{ secrets.VITE_PAYFAST_MERCHANT_KEY }}
+          PAYFAST_PASSPHRASE: ${{ secrets.PAYFAST_PASSPHRASE }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CUSTOMER_ORIGIN: ${{ vars.STAGING_CUSTOMER_ORIGIN }}
+          ADMIN_ORIGIN: ${{ vars.STAGING_ADMIN_ORIGIN }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.STAGING_CORS_ALLOWED_ORIGINS }}
+        run: node scripts/verify-deploy-env.mjs --allow-sandbox
+
+      - name: Trigger Render staging deploy
+        env:
+          RENDER_STAGING_DEPLOY_HOOK: ${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}
+        run: |
+          if [ -z "${RENDER_STAGING_DEPLOY_HOOK}" ]; then
+            echo "RENDER_STAGING_DEPLOY_HOOK is not set." >&2
+            exit 1
+          fi
+          curl -fsS -X POST "${RENDER_STAGING_DEPLOY_HOOK}" -o /dev/null
+
+      - name: Wait for staging to become healthy
+        env:
+          HEALTH_URL: ${{ secrets.STAGING_HEALTH_URL }}
+        run: |
+          if [ -z "${HEALTH_URL}" ]; then
+            echo "STAGING_HEALTH_URL is not set; skipping health poll." >&2
+            exit 0
+          fi
+          for attempt in $(seq 1 40); do
+            body=$(curl -fsS "${HEALTH_URL}/api/health" || true)
+            if echo "${body}" | grep -q '"status":"ok"'; then
+              echo "Staging healthy after ${attempt} attempt(s)."
+              echo "${body}"
+              exit 0
+            fi
+            echo "attempt ${attempt}: not healthy yet"
+            sleep 15
+          done
+          echo "Staging did not become healthy in time." >&2
+          exit 1
+
+  deploy-production:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify deployment environment contract
+        env:
+          NODE_ENV: production
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_USE_SUPABASE_CATALOG: 'true'
+          VITE_USE_SUPABASE_DROPS: 'true'
+          VITE_USE_SUPABASE_CART: 'true'
+          VITE_USE_SUPABASE_WISHLIST: 'true'
+          VITE_USE_SUPABASE_ORDERS: 'true'
+          VITE_USE_SUPABASE_CHECKOUT: 'true'
+          VITE_USE_SUPABASE_AUTH: 'true'
+          VITE_PAYMENT_PROVIDER_MODE: payfast
+          VITE_PAYFAST_MERCHANT_ID: ${{ secrets.VITE_PAYFAST_MERCHANT_ID }}
+          VITE_PAYFAST_MERCHANT_KEY: ${{ secrets.VITE_PAYFAST_MERCHANT_KEY }}
+          PAYFAST_PASSPHRASE: ${{ secrets.PAYFAST_PASSPHRASE }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CUSTOMER_ORIGIN: ${{ vars.PRODUCTION_CUSTOMER_ORIGIN }}
+          ADMIN_ORIGIN: ${{ vars.PRODUCTION_ADMIN_ORIGIN }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.PRODUCTION_CORS_ALLOWED_ORIGINS }}
+        run: node scripts/verify-deploy-env.mjs
+
+      - name: Trigger Render production deploy
+        env:
+          RENDER_PRODUCTION_DEPLOY_HOOK: ${{ secrets.RENDER_PRODUCTION_DEPLOY_HOOK }}
+        run: |
+          if [ -z "${RENDER_PRODUCTION_DEPLOY_HOOK}" ]; then
+            echo "RENDER_PRODUCTION_DEPLOY_HOOK is not set." >&2
+            exit 1
+          fi
+          curl -fsS -X POST "${RENDER_PRODUCTION_DEPLOY_HOOK}" -o /dev/null
+
+      - name: Wait for production to become healthy
+        env:
+          HEALTH_URL: ${{ secrets.PRODUCTION_HEALTH_URL }}
+        run: |
+          if [ -z "${HEALTH_URL}" ]; then
+            echo "PRODUCTION_HEALTH_URL is not set; skipping health poll." >&2
+            exit 0
+          fi
+          for attempt in $(seq 1 40); do
+            body=$(curl -fsS "${HEALTH_URL}/api/health" || true)
+            if echo "${body}" | grep -q '"status":"ok"'; then
+              echo "Production healthy after ${attempt} attempt(s)."
+              echo "${body}"
+              exit 0
+            fi
+            echo "attempt ${attempt}: not healthy yet"
+            sleep 15
+          done
+          echo "Production did not become healthy in time." >&2
+          exit 1
+

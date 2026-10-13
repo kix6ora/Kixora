@@ -1,0 +1,188 @@
+# render.yaml — Kixora Render Blueprint
+#
+# Source of truth for Kixora deploy configuration.
+# Platform of record: Render (web) + Supabase (Postgres/Auth/Storage/Realtime).
+# There is no Cloud Run, no Artifact Registry, no Cloudflare in this stack.
+#
+# IMPORTANT — VITE_* variables are inlined into the bundle at BUILD time.
+# Changing any VITE_* value requires a rebuild/redeploy, not a restart.
+# Values marked `sync: false` must be set in the Render dashboard (secrets and
+# per-environment values). Never commit real values to this file.
+#
+# Apply with: Render Dashboard -> Blueprints -> New Blueprint Instance
+
+services:
+  # ---------------------------------------------------------------------------
+  # Single web service serving BOTH the storefront and the admin hub.
+  # src/routes/DomainGuard.tsx switches on window.location.hostname, so one
+  # bundle correctly serves kixora.com (customer) and admin.kixora.com (admin).
+  # Both origins must also appear in CORS_ALLOWED_ORIGINS — the server fails
+  # closed otherwise (see src/config/cors.ts and src/config/env.ts).
+  #
+  # Alternative: split into two services (kixora-web + kixora-admin) if you want
+  # separate instance sizing or independent deploy cadence. Both would use the
+  # same buildCommand/startCommand and the same env set.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: kixora-web
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: main
+    autoDeploy: false
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.cjs
+    healthCheckPath: /api/health
+    numInstances: 1
+    domains:
+      - kixora.com
+      - www.kixora.com
+      - admin.kixora.com
+    envVars:
+      # --- runtime ---------------------------------------------------------
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      # PORT is injected by Render; server.ts reads process.env.PORT.
+
+      # --- build-time public config (inlined into the bundle) --------------
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_PUBLIC_SITE_URL
+        value: https://kixora.com
+      - key: VITE_CUSTOMER_DOMAIN
+        value: https://kixora.com
+      - key: VITE_ADMIN_DOMAIN
+        value: https://admin.kixora.com
+
+      # --- live-data flags: ALL must be true or scripts/flags.ts refuses the
+      #     production build. Do not set these to false in production.
+      - key: VITE_USE_SUPABASE_CATALOG
+        value: "true"
+      - key: VITE_USE_SUPABASE_DROPS
+        value: "true"
+      - key: VITE_USE_SUPABASE_CART
+        value: "true"
+      - key: VITE_USE_SUPABASE_WISHLIST
+        value: "true"
+      - key: VITE_USE_SUPABASE_ORDERS
+        value: "true"
+      - key: VITE_USE_SUPABASE_CHECKOUT
+        value: "true"
+      - key: VITE_USE_SUPABASE_AUTH
+        value: "true"
+
+      # --- payments --------------------------------------------------------
+      - key: VITE_PAYMENT_PROVIDER_MODE
+        value: payfast
+      - key: VITE_PAYFAST_MERCHANT_ID
+        sync: false
+      - key: VITE_PAYFAST_MERCHANT_KEY
+        sync: false
+      - key: VITE_PAYFAST_SANDBOX
+        value: "false" # MUST be false in production
+
+      # --- server-only secrets (never prefix with VITE_) -------------------
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PAYFAST_PASSPHRASE
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: Kixora Vault <orders@kixora.com>
+      - key: THE_COURIER_GUY_API_KEY
+        sync: false
+      - key: SHIPPING_WEBHOOK_SECRET
+        sync: false
+
+      # --- origin contract (must match the domains above exactly) ----------
+      - key: CUSTOMER_ORIGIN
+        value: https://kixora.com
+      - key: ADMIN_ORIGIN
+        value: https://admin.kixora.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://kixora.com,https://www.kixora.com,https://admin.kixora.com
+
+      # --- observability (only after the real SDK is added) ----------------
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: production
+
+  # ---------------------------------------------------------------------------
+  # Staging service. Auto-deploys from `develop`.
+  # Use a SEPARATE Supabase project — never reuse production keys.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: kixora-staging
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: develop
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.cjs
+    healthCheckPath: /api/health
+    numInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_PUBLIC_SITE_URL
+        sync: false
+      - key: VITE_CUSTOMER_DOMAIN
+        sync: false
+      - key: VITE_ADMIN_DOMAIN
+        sync: false
+      - key: VITE_USE_SUPABASE_CATALOG
+        value: "true"
+      - key: VITE_USE_SUPABASE_DROPS
+        value: "true"
+      - key: VITE_USE_SUPABASE_CART
+        value: "true"
+      - key: VITE_USE_SUPABASE_WISHLIST
+        value: "true"
+      - key: VITE_USE_SUPABASE_ORDERS
+        value: "true"
+      - key: VITE_USE_SUPABASE_CHECKOUT
+        value: "true"
+      - key: VITE_USE_SUPABASE_AUTH
+        value: "true"
+      - key: VITE_PAYMENT_PROVIDER_MODE
+        value: payfast
+      - key: VITE_PAYFAST_SANDBOX
+        value: "true" # sandbox only on staging
+      - key: VITE_PAYFAST_MERCHANT_ID
+        sync: false
+      - key: VITE_PAYFAST_MERCHANT_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PAYFAST_PASSPHRASE
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: Kixora Staging <staging@kixora.com>
+      - key: THE_COURIER_GUY_API_KEY
+        sync: false
+      - key: SHIPPING_WEBHOOK_SECRET
+        sync: false
+      - key: CUSTOMER_ORIGIN
+        sync: false
+      - key: ADMIN_ORIGIN
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: staging
+      - key: SENTRY_DSN
+        sync: false
+

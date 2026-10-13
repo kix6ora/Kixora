@@ -1,5 +1,13 @@
 # Kixora Production Readiness Audit
 
+> **Platform note (updated).** The platform of record is now **Render (web) +
+> Supabase (Postgres/Auth/Storage/Realtime)**. Any reference to Cloud Run, GCP,
+> Artifact Registry or Cloudflare in this document is historical and has been
+> removed from the deploy configuration. See `render.yaml`,
+> `docs/PRODUCTION_READY_WORKFLOW.md` and `docs/DEPLOYMENT_RUNBOOK.md` for the
+> current contract.
+
+
 ## Executive summary
 
 Kixora is materially strong as a mock-mode storefront and QA build, but it is not production-ready yet.
