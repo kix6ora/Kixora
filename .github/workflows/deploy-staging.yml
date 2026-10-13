@@ -49,7 +49,21 @@ jobs:
         run: gcloud auth configure-docker "$CLOUD_RUN_REGION-docker.pkg.dev" --quiet
 
       - name: Build Docker image
-        run: docker build -t "$IMAGE_TAG" .
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          docker build -t "$IMAGE_TAG" \
+            --build-arg VITE_USE_SUPABASE_CATALOG=true \
+            --build-arg VITE_USE_SUPABASE_DROPS=true \
+            --build-arg VITE_USE_SUPABASE_CART=true \
+            --build-arg VITE_USE_SUPABASE_WISHLIST=true \
+            --build-arg VITE_USE_SUPABASE_ORDERS=true \
+            --build-arg VITE_USE_SUPABASE_CHECKOUT=true \
+            --build-arg VITE_USE_SUPABASE_AUTH=true \
+            --build-arg VITE_SUPABASE_URL \
+            --build-arg VITE_SUPABASE_ANON_KEY \
+            .
 
       - name: Push Docker image
         run: docker push "$IMAGE_TAG"

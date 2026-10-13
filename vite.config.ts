@@ -1,7 +1,14 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { assertLiveDataFlags } from './scripts/flags';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Gate the production bundle on live data before anything is built. loadEnv is
+  // limited to the prefixes the guard understands so only relevant keys are read.
+  const env = loadEnv(mode, process.cwd(), ['VITE_', 'ALLOW_MOCK_PRODUCTION_BUILD', 'CI']);
+  assertLiveDataFlags(env, mode);
+
+return {
   plugins: [react()],
   server: {
     host: '0.0.0.0',
@@ -34,4 +41,5 @@ export default defineConfig({
       },
     },
   },
+};
 });
