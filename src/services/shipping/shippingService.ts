@@ -8,40 +8,12 @@ import {
   ShippingLabelResult,
   CarrierTrackingResult,
 } from './carrierTypes';
-import { TheCourierGuyDriver } from './carrierDrivers';
-
-/**
- * Deterministic production flat-rate estimates for shipping quotes, in ZAR (rands).
- * Change rates here only — all production quotes read from this table.
- */
-const PRODUCTION_FLAT_RATE_ZAR = {
-  gauteng: 150,
-  westernCape: 200,
-  otherProvinces: 120,
-} as const;
-
-/** Orders with a subtotal strictly above this amount (in rands) ship free. */
-const PRODUCTION_FREE_SHIPPING_THRESHOLD_ZAR = 1500;
-
-/** Normalises province input so matching is case and whitespace insensitive. */
-function normaliseProvince(value?: string): string {
-  return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-}
+import { SimulatedCourierGuyDriver } from './carrierDrivers';
+import { calculateShipping } from './flatRate';
 
 /** Resolves the flat-rate estimate for a production quote request. */
 function productionFlatRateZar(request: ShippingRateRequest): number {
-  if (request.totalValueZar > PRODUCTION_FREE_SHIPPING_THRESHOLD_ZAR) {
-    return 0;
-  }
-  const province = normaliseProvince(request.destination?.stateOrProvince);
-  if (province === 'gauteng') {
-    return PRODUCTION_FLAT_RATE_ZAR.gauteng;
-  }
-  if (province === 'western cape') {
-    return PRODUCTION_FLAT_RATE_ZAR.westernCape;
-  }
-  // Unknown or missing province falls into "all other provinces"
-  return PRODUCTION_FLAT_RATE_ZAR.otherProvinces;
+  return calculateShipping(request.totalValueZar, request.itemsCount);
 }
 
 /** Builds a single flat-rate estimate quote for production fallback pricing. */
@@ -68,10 +40,15 @@ export class ShippingService {
   private defaultProvider: CarrierProviderId = 'the_courier_guy';
 
   constructor() {
-    this.registerDriver(new TheCourierGuyDriver());
+    if (process.env.NODE_ENV !== 'production') {
+      this.registerDriver(new SimulatedCourierGuyDriver());
+    }
   }
 
   registerDriver(driver: ShippingCarrierDriver) {
+    if (process.env.NODE_ENV === 'production' && driver.isSimulated === true) {
+      throw new Error('SIMULATED_PROVIDER_NOT_ALLOWED_IN_PRODUCTION: simulated shipping carrier rejected.');
+    }
     this.drivers.set(driver.providerId, driver);
   }
 
@@ -80,6 +57,9 @@ export class ShippingService {
     const driver = this.drivers.get(id);
     if (!driver) {
       throw new Error(`Unsupported shipping carrier: ${id}`);
+    }
+    if (process.env.NODE_ENV === 'production' && driver.isSimulated === true) {
+      throw new Error('SIMULATED_PROVIDER_NOT_ALLOWED_IN_PRODUCTION: simulated shipping carrier rejected.');
     }
     return driver;
   }

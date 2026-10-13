@@ -9,14 +9,15 @@ import { MockPaymentDriver } from './mockDriver';
 import { PayFastPaymentDriver } from './payfastDriver';
 
 export * from './types';
-export * from './mockDriver';
 export * from './payfastDriver';
 
 // Singleton registry of drivers
 const drivers: Partial<Record<PaymentProviderType, PaymentGatewayDriver>> = {
-  mock: new MockPaymentDriver(),
   payfast: new PayFastPaymentDriver(),
 };
+if (process.env.NODE_ENV !== 'production') {
+  drivers.mock = new MockPaymentDriver();
+}
 
 /**
  * Retrieve a payment driver by explicit provider name.

@@ -4,6 +4,7 @@ import { getEnvConfig } from '../config/env';
 import { CartItem } from '../types';
 import { paymentService } from './paymentService';
 import { emailService } from './email/emailService';
+import { calculateShipping } from './shipping/flatRate';
 
 export interface CustomerInfoInput {
   email: string;
@@ -74,7 +75,8 @@ export const checkoutService = {
     const payfastMode = getEnvConfig().paymentProviderMode === 'payfast';
     const subtotal = items.reduce((sum, i) => sum + (i.sneaker?.price || 0) * (i.quantity || 1), 0);
     const discount = input.promoCode ? Math.round(subtotal * 0.1) : 0;
-    const shippingFee = subtotal >= 2000 ? 0 : 150;
+    const itemCount = items.reduce((sum, i) => sum + (i.quantity || 1), 0);
+    const shippingFee = calculateShipping(subtotal - discount, itemCount);
     const total = Math.max(0, subtotal - discount + shippingFee);
 
     const mockOrderCode = `KXO-${Math.floor(1000 + Math.random() * 9000)}`;

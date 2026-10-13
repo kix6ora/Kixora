@@ -9,12 +9,13 @@ import {
 } from './carrierTypes';
 
 /**
- * The Courier Guy (South Africa) Integration Driver
- * Handles live quote requests, waybill dispatch, and tracking synchronization.
+ * Simulated Courier Guy (South Africa) Driver — staging/test only.
+ * Never used in production; shippingService rejects simulated drivers there.
  */
-export class TheCourierGuyDriver implements ShippingCarrierDriver {
+export class SimulatedCourierGuyDriver implements ShippingCarrierDriver {
   providerId = 'the_courier_guy' as const;
   providerName = 'The Courier Guy';
+  readonly isSimulated = true as const;
 
   private apiKey: string;
   private apiBaseUrl: string;
@@ -25,6 +26,10 @@ export class TheCourierGuyDriver implements ShippingCarrierDriver {
     this.apiBaseUrl = isSandbox
       ? 'https://api-sandbox.thecourierguy.co.za/v1'
       : 'https://api.thecourierguy.co.za/v1';
+  }
+
+  isConfigured(): boolean {
+    return this.apiKey.trim().length > 0;
   }
 
   async calculateRates(request: ShippingRateRequest): Promise<ShippingRateQuote[]> {

@@ -126,6 +126,8 @@ export interface CarrierWebhookPayload {
 export interface ShippingCarrierDriver {
   providerId: CarrierProviderId;
   providerName: string;
+  readonly isSimulated: boolean;
+  isConfigured(): boolean;
   calculateRates(request: ShippingRateRequest): Promise<ShippingRateQuote[]>;
   generateLabel(request: ShippingLabelRequest): Promise<ShippingLabelResult>;
   getTracking(trackingNumber: string): Promise<CarrierTrackingResult>;
