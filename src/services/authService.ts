@@ -19,12 +19,9 @@ const authListeners = new Set<(session: AuthSession | null) => void>();
  * Local dev and the Playwright mock mode (NODE_ENV=test / VITE_PLAYWRIGHT_ADMIN)
  * keep using localStorage as before.
  */
-function isMockAuthSessionAllowed(): boolean {
-  const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
+export function isMockAuthSessionAllowed(metaEnvInput?: Record<string, any>): boolean {
+  const metaEnv = metaEnvInput ?? ((typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {});
   const procEnv = (typeof process !== 'undefined' && process.env) || {};
-  if (metaEnv.VITE_PLAYWRIGHT_ADMIN === 'true' || procEnv.VITE_PLAYWRIGHT_ADMIN === 'true') {
-    return true;
-  }
   // D-04 override: explicit production-auth enforcement always wins over the
   // test-mode early return below. Accept string 'true' as well as boolean true
   // for PROD because vi.stubEnv stores strings, and accept process.env because
@@ -38,6 +35,9 @@ function isMockAuthSessionAllowed(): boolean {
     procEnv.PROD === 'true';
   if (forceProductionAuth || prodFlag) {
     return false;
+  }
+  if (metaEnv.VITE_PLAYWRIGHT_ADMIN === 'true' || procEnv.VITE_PLAYWRIGHT_ADMIN === 'true') {
+    return true;
   }
   if (metaEnv.MODE === 'test' || procEnv.NODE_ENV === 'test') {
     return true;
