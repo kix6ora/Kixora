@@ -21,4 +21,3 @@ artifacts/staging-item1/
 # Agent worktrees: `.kilo/worktrees/*` are full nested checkouts of this
 # repository. Committing them duplicates the whole tree into the repo.
 .kilo/
-playwright-report/

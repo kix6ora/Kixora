@@ -146,51 +146,32 @@ This guide provides step-by-step instructions for setting up the Kixora staging 
 
 ## Step 6: Deploy to Staging
 
-### Option A: Vercel/Netlify (Recommended for quick staging)
+Kixora deploys to **Render**. There is no Vercel, Netlify, Cloud Run or GCR path
+in this stack. `render.yaml` at the repo root is the source of truth.
 
-1. **Connect Repository**
-   - Connect your GitHub repository to Vercel/Netlify
+1. **Create the staging service**
+   - Render Dashboard → New → Blueprint (or Web Service) using this repository.
+   - Branch: `develop`. Runtime: Node. Build: `npm ci && npm run build`.
+     Start: `node dist/server.cjs`. Health check path: `/api/health`.
 
-2. **Configure Environment Variables**
-   - Add all variables from `.env.staging`
-   - Set build command: `npm run build`
-   - Set output directory: `dist`
+2. **Configure environment variables**
+   - Add every variable from `.env.staging` (names only — never commit values).
+   - Remember `VITE_*` values are baked in at **build** time; changing one
+     requires a redeploy, not a restart.
 
 3. **Deploy**
-   - Push to `develop` branch
-   - Vercel/Netlify will auto-deploy
-
-### Option B: Cloud Run (Production-like)
-
-1. **Build Docker Image**
-   ```bash
-   docker build -t kixora-staging .
-   ```
-
-2. **Tag and Push**
-   ```bash
-   docker tag kixora-staging gcr.io/<your-project>/kixora-staging
-   docker push gcr.io/<your-project>/kixora-staging
-   ```
-
-3. **Deploy to Cloud Run**
-   ```bash
-   gcloud run deploy kixora-staging \
-     --image gcr.io/<your-project>/kixora-staging \
-     --platform managed \
-     --region <your-region> \
-     --allow-unauthenticated
-   ```
+   - Merge into `develop`, or run the **Deploy (Render)** workflow with target
+     `staging`, which calls the Render Deploy Hook and polls `/api/health`.
 
 ## Step 7: Configure DNS (Optional)
 
-1. **Add CNAME Records**
-   - `staging.kixora.com` → your deployment URL
-   - `admin-staging.kixora.com` → your deployment URL
+1. **Attach custom domains in Render**
+   - `staging.kixora.com` and `admin-staging.kixora.com` → the staging service.
+   - Render issues and renews TLS automatically.
 
-2. **Configure SSL**
-   - Most platforms handle SSL automatically
-   - Verify with `https://staging.kixora.com`
+2. **Create the DNS records**
+   - Add the exact targets Render shows in Settings → Custom Domains.
+   - Verify with `https://staging.kixora.com/api/health`.
 
 ## Verification Checklist
 

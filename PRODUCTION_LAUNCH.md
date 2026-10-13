@@ -43,9 +43,8 @@
   the same migration revision to production. No production service-role key
   belongs in browser variables or repository files.
 
-```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                             Cloudflare CDN / Edge                           │
+│                        Render Edge (TLS + global proxy)                     │
 └───────────────────────┬─────────────────────────────┬───────────────────────┘
                         │                             │
                         ▼                             ▼
@@ -57,12 +56,16 @@
        └─────────────────────────────────┘   └─────────────────────────────────┘
 ```
 
+> There is **no CDN in front of Render** in this stack. Render terminates TLS and
+> serves the Express process directly. Adding Cloudflare/Vercel/Netlify in front
+> changes the client IP that rate limiting and logging observe, so it is out of
+> scope until explicitly approved.
+
 ### Route-Level Cache Policies
 
 1. **Static Assets (`/assets/*`, `.js`, `.css`, `.woff2`, `.png`, `.jpg`, `.webp`)**:
    - `Cache-Control: public, max-age=31536000, immutable`
    - Content-hashed filenames guarantee instant cache invalidation upon redeployment.
-   - Cloudflare Edge Cache TTL: 1 year (`31536000`).
 
 2. **Application Entrypoint (`index.html`)**:
    - `Cache-Control: public, max-age=0, must-revalidate`
@@ -71,8 +74,6 @@
 3. **Dynamic API & Webhook Ingress (`/api/*`, `/api/webhooks/*`)**:
    - `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0`
    - `Pragma: no-cache`
-   - `Surrogate-Control: no-store`
-   - Bypasses Cloudflare cache entirely (`Cache Level: Bypass`).
 
 4. **Crawler Interceptor & SEO Drops (`/product/:id`)**:
    - `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`
@@ -101,33 +102,34 @@
 
 ### Pre-Cutover Verification (T-48 Hours)
 
-The repository does not provision DNS, Cloudflare, certificates, or registrar
-changes. These are external launch blockers and must be verified by the
-operator in the authoritative provider consoles before marking complete.
+The repository does not provision DNS, certificates, or registrar changes.
+Render issues and renews TLS automatically once a custom domain is attached.
+These are external launch blockers and must be verified by the operator in the
+Render dashboard and the authoritative DNS provider console before marking complete.
 
-- [ ] Configure the production DNS zone for `kixora.com` and `admin.kixora.com`.
-- [ ] Verify both origins resolve to the intended deployment.
-- [ ] Verify SSL/TLS is **Full (Strict)** and certificates cover both origins.
-- [ ] Confirm `CUSTOMER_ORIGIN`, `ADMIN_ORIGIN`, and `CORS_ALLOWED_ORIGINS` match the verified DNS names.
+- [ ] Attach `kixora.com`, `www.kixora.com` and `admin.kixora.com` to the Render service.
+- [ ] Verify both origins resolve to the Render service and TLS is issued.
+- [ ] Confirm `CUSTOMER_ORIGIN`, `ADMIN_ORIGIN`, and `CORS_ALLOWED_ORIGINS` match the verified domains.
 
 ### DNS Records Table
 
-| Type | Host | Target / Value | Proxy Status | TTL |
+| Type | Host | Target / Value | Proxy | TTL |
 | :--- | :--- | :--- | :--- | :--- |
-| `A` | `@` (apex) | `199.36.158.100` (Cloud Run / Load Balancer) | Proxied (Orange Cloud) | Auto |
-| `CNAME` | `www` | `kixora.com` | Proxied (Orange Cloud) | Auto |
-| `CNAME` | `api` | `kixora.com` | Proxied (Orange Cloud) | Auto |
-| `TXT` | `@` | `v=spf1 include:_spf.resend.com ~all` | DNS Only | 300 |
-| `CNAME` | `resend._domainkey` | `resend._domainkey.resend.com` | DNS Only | 300 |
-| `TXT` | `_dmarc` | `v=DMARC1; p=quarantine; rua=mailto:dmarc@kixora.com` | DNS Only | 300 |
+| `A` / `ALIAS` | `@` (apex) | Render-provided apex target (see Render → Settings → Custom Domains) | DNS only | Auto |
+| `CNAME` | `www` | Render-provided subdomain target | DNS only | Auto |
+| `CNAME` | `admin` | Render-provided subdomain target | DNS only | Auto |
+| `TXT` | `@` | `v=spf1 include:_spf.resend.com ~all` | DNS only | 300 |
+| `CNAME` | `resend._domainkey` | `resend._domainkey.resend.com` | DNS only | 300 |
+| `TXT` | `_dmarc` | `v=DMARC1; p=quarantine; rua=mailto:dmarc@kixora.com` | DNS only | 300 |
 
 ### Cutover Execution Sequence (T-0 Hours)
-1. **Maintenance Lock**: Enable maintenance banner if DB migrations require schema locking (not required for non-breaking 0024 migration).
-2. **Apply Database Migrations**: Execute `supabase/migrations/0024_carrier_tracking_metadata.sql`.
-3. **Deploy Production Container**: Deploy built container to production Cloud Run instance.
-4. **Switch DNS Records**: Update Apex and CNAME records in registrar to point to Cloudflare/Origin gateway.
-5. **Verify Edge Routing**: Test DNS resolution across global resolvers (`8.8.8.8`, `1.1.1.1`).
-6. **TLS Certificate Validation**: Confirm SSL handshake succeeds at `https://kixora.com` and `https://www.kixora.com`.
+1. **Maintenance Lock**: Enable maintenance banner if DB migrations require schema locking.
+2. **Apply Database Migrations**: Apply the pending `supabase/migrations/*.sql` files to the production Supabase project.
+3. **Deploy**: Trigger the **Deploy (Render)** workflow with target `production`.
+4. **Verify Origin Contract**: Confirm `/api/health` and `/api/ready` are healthy and the reported commit matches the intended merge.
+5. **Switch DNS Records**: Point the apex and `www`/`admin` records at the Render targets.
+6. **Verify Resolution**: Test DNS resolution across global resolvers (`8.8.8.8`, `1.1.1.1`).
+7. **TLS Certificate Validation**: Confirm the SSL handshake succeeds at `https://kixora.com` and `https://admin.kixora.com`.
 
 ---
 
@@ -153,7 +155,7 @@ operator in the authoritative provider consoles before marking complete.
 
 If a critical incident occurs during cutover (e.g. fatal edge routing, database lock, gateway failure):
 
-1. **DNS Fallback**: Use the verified provider runbook to restore the previous stable target; propagation time is not guaranteed by this repository.
-2. **Container Rollback**: Revert Cloud Run service traffic to previous stable revision tag via CLI/Console.
-3. **Database Reversion**: Run backward migration if schema modifications broke compatibility.
-4. **Incident Audit**: Review server logs for root cause analysis prior to re-attempting deployment.
+1. **DNS Fallback**: Restore the previous DNS target in the registrar; propagation time is not guaranteed.
+2. **Service Rollback**: In the Render dashboard, redeploy the previous successful deploy for the service (Deploys → last good deploy → Rollback). Render keeps prior deploys, so no image tag management is required.
+3. **Database Reversion**: Apply a **new forward migration** that reverts the incompatible change. Never edit or delete an applied migration.
+4. **Incident Audit**: Review Render service logs for root cause analysis before re-attempting deployment.

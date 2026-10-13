@@ -1,11 +1,13 @@
 # KIXORA — Phases to Production
 
 **Project:** KIXORA Authentic Sneaker Platform  
-**Repo:** https://github.com/Mandlakaise-Qhomane/Kixora  
-**Branch audited:** `main` (`6767cad`)  
-**Also present (unmerged):** `remediation/production-launch`  
+**Repo:** https://github.com/kix6ora/Kixora  
+**Branches:** `main` (production), `develop` (staging integration)  
+**Stack of record:** Render (web) + Supabase (Postgres/Auth/Storage/Realtime)  
+**Superseded by:** `docs/PRODUCTION_READY_WORKFLOW.md` — use that for the
+authoritative phase plan. This file is retained for the design-system history.  
 **Visual source:** KIXORA brand / homepage design board  
-**Date:** 10 September 2026
+
 
 ---
 
@@ -233,8 +235,8 @@ It is **not** production-ready and it does **not** yet match the design board ex
 **Work**
 
 - Fill production secrets from `PRODUCTION_LAUNCH.md` (never commit real keys).
-- Cloudflare Full (Strict) TLS, cache rules for `/assets/*` vs `/api/*`.
-- DNS cutover for apex + `www` + `admin`.
+- Render-managed TLS on the custom domains; cache headers for `/assets/*` vs `/api/*` are set by the app (`src/server/staticAssets.ts`).
+- DNS cutover for apex + `www` + `admin` to the Render targets.
 - Full Playwright + unit + Lighthouse + security regression.
 
 **Launch checklist**

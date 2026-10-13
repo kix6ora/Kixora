@@ -8,6 +8,11 @@ carries that belongs to a stack you are no longer using. Delete or rewrite it �
 do not leave it as a "future option", because dead deploy config is how a
 production build silently ships against the wrong platform.
 
+> **Status:** §1 (Cloud Run/GCP), §2 (AI Studio/Firebase/Gemini) and §3.5/§3.6
+> (dead provider names, `bun.lock`) are **done in branch `cline/7hm793k0`** — see
+> `docs/PHASE0_1_EXECUTION_REPORT.md`. §3.1–§3.4 (mock payment driver, carrier
+> driver, Cloudinary) are **Phase 3** work and still open.
+
 ---
 
 ## 0. Why this matters

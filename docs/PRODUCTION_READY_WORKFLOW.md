@@ -10,6 +10,12 @@ deployed on **Render**, database and storage on **Supabase**.
 into Claude / Cline / Copilot / Codex for that phase. Standing rules live in
 `CLAUDE.md` and `AGENTS.md` at the repo root.
 
+> **Progress:** ✅ **Phase 0 and Phase 1 are complete in the repo** — see
+> `docs/PHASE0_1_EXECUTION_REPORT.md` for the itemised evidence and the list of
+> human actions still required (Render services, domains, secrets, GCP secret
+> deletion, Firebase key rotation). Next phase: **Phase 2 — Supabase as the
+> single source of truth.**
+
 ---
 
 ## Part A — Architecture review (what you actually have)
