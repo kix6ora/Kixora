@@ -17,6 +17,7 @@ import { getSupabaseAdmin } from './src/lib/supabaseAdmin';
 import { authorizePayFastOrder, initiatePayFastCheckout } from './src/services/payments/payfastCheckout';
 import { buildCspConnectSources, buildCspImageSources, buildCspWorkerSources } from './src/config/cspImageSources';
 import { mountProductionStaticAssets } from './src/server/staticAssets';
+import { isRateLimitExempt } from './src/server/rateLimitSkip';
 
 /**
  * Kixora Production Server (Express + Vite)
@@ -225,7 +226,9 @@ async function startServer() {
     max: 100, // Limit each IP to 100 requests per window
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Too many requests, please try again later.' }
+    message: { error: 'Too many requests, please try again later.' },
+    // Render health probes must never be rate limited.
+    skip: (req) => isRateLimitExempt(req.path),
   });
 
   const authLimiter = rateLimit({
