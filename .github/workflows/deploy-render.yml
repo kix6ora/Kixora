@@ -2,7 +2,7 @@ name: Deploy (Render)
 
 on:
   push:
-    branches: [develop, main]
+    branches: [develop]
   workflow_dispatch:
 
 jobs:
@@ -41,21 +41,19 @@ jobs:
         run: node scripts/staging/wait-for-render-deploy.mjs
 
   deploy-production:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 30
     env:
       CUSTOMER_HEALTH_URL: ${{ vars.RENDER_PRODUCTION_CUSTOMER_HEALTH_URL }}
-      ADMIN_HEALTH_URL: ${{ vars.RENDER_PRODUCTION_ADMIN_HEALTH_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trigger Render deploy hooks (production)
+      - name: Trigger Render deploy hook (production)
         env:
           RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER: ${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER }}
-          RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN: ${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN }}
         run: |
           if [ -n "$RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER" ]; then
             echo "Triggering customer production deploy hook..."
@@ -63,14 +61,8 @@ jobs:
           else
             echo "RENDER_DEPLOY_HOOK_PRODUCTION_CUSTOMER not set; relying on Render auto-deploy."
           fi
-          if [ -n "$RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN" ]; then
-            echo "Triggering admin production deploy hook..."
-            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN"
-          else
-            echo "RENDER_DEPLOY_HOOK_PRODUCTION_ADMIN not set; relying on Render auto-deploy."
-          fi
 
-      - name: Verify production health endpoints
+      - name: Verify production health endpoint
         run: |
           if [ -z "$CUSTOMER_HEALTH_URL" ]; then
             echo "vars.RENDER_PRODUCTION_CUSTOMER_HEALTH_URL is not set; skipping production health poll."
@@ -81,17 +73,13 @@ jobs:
           echo "Expecting commit $expected"
           for attempt in $(seq 1 20); do
             echo "Attempt $attempt/20..."
-            ok=true
-            for url in "$CUSTOMER_HEALTH_URL" ${ADMIN_HEALTH_URL:+$ADMIN_HEALTH_URL}; do
-              body="$(curl -fsS --max-time 15 "$url" || true)"
-              echo "$url -> $body"
-              echo "$body" | grep -q "\"commit\":\"$expected\"" || ok=false
-            done
-            if [ "$ok" = true ]; then
+            body="$(curl -fsS --max-time 15 "$CUSTOMER_HEALTH_URL" || true)"
+            echo "$CUSTOMER_HEALTH_URL -> $body"
+            if echo "$body" | grep -q "\"commit\":\"$expected\""; then
               echo "Production deploy verified at $expected."
               exit 0
             fi
             if [ "$attempt" -lt 20 ]; then sleep 30; fi
           done
-          echo "Production services did not reach $expected. Check Render branch/auto-deploy and manually deploy latest commit."
+          echo "Production service did not reach $expected. Check Render branch/auto-deploy and manually deploy latest commit."
           exit 1

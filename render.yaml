@@ -114,7 +114,10 @@ services:
         value: production
 
   # ---------------------------------------------------------------------------
-  # Staging service. Auto-deploys from `develop`.
+  # Staging services (customer + admin) on separate onrender.com origins.
+  # Both must share identical CUSTOMER_ORIGIN, ADMIN_ORIGIN and
+  # CORS_ALLOWED_ORIGINS values, set in the Render dashboard.
+  # autoDeploy is false so the GitHub workflow deploy hooks are the only trigger.
   # Use a SEPARATE Supabase project — never reuse production keys.
   # ---------------------------------------------------------------------------
   - type: web
@@ -123,7 +126,7 @@ services:
     plan: starter
     region: frankfurt
     branch: develop
-    autoDeploy: true
+    autoDeploy: false # deploys only via GitHub workflow deploy hook
     buildCommand: npm ci && npm run build
     startCommand: node dist/server.cjs
     healthCheckPath: /api/health
@@ -185,4 +188,73 @@ services:
         value: staging
       - key: SENTRY_DSN
         sync: false
+  - type: web
+    name: kixora-admin-staging
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: develop
+    autoDeploy: false # deploys only via GitHub workflow deploy hook
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.cjs
+    healthCheckPath: /api/health
+    numInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_PUBLIC_SITE_URL
+        sync: false
+      - key: VITE_CUSTOMER_DOMAIN
+        sync: false
+      - key: VITE_ADMIN_DOMAIN
+        sync: false
+      - key: VITE_USE_SUPABASE_CATALOG
+        value: "true"
+      - key: VITE_USE_SUPABASE_DROPS
+        value: "true"
+      - key: VITE_USE_SUPABASE_CART
+        value: "true"
+      - key: VITE_USE_SUPABASE_WISHLIST
+        value: "true"
+      - key: VITE_USE_SUPABASE_ORDERS
+        value: "true"
+      - key: VITE_USE_SUPABASE_CHECKOUT
+        value: "true"
+      - key: VITE_USE_SUPABASE_AUTH
+        value: "true"
+      - key: VITE_PAYMENT_PROVIDER_MODE
+        value: payfast
+      - key: VITE_PAYFAST_SANDBOX
+        value: "true" # sandbox only on staging
+      - key: VITE_PAYFAST_MERCHANT_ID
+        sync: false
+      - key: VITE_PAYFAST_MERCHANT_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PAYFAST_PASSPHRASE
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: Kixora Staging <staging@kixora.com>
+      - key: THE_COURIER_GUY_API_KEY
+        sync: false
+      - key: SHIPPING_WEBHOOK_SECRET
+        sync: false
+      - key: CUSTOMER_ORIGIN
+        sync: false
+      - key: ADMIN_ORIGIN
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: staging
+      - key: SENTRY_DSN
+        sync: false
+
 

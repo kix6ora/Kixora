@@ -144,10 +144,6 @@ jobs:
           path: playwright-report/
           retention-days: 30
 
-      - name: Stop local Supabase
-        if: always()
-        run: npx supabase stop
-
   security-audit:
     runs-on: ubuntu-latest
     steps:
