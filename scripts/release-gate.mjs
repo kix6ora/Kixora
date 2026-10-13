@@ -127,11 +127,13 @@ function freePort(p) {
 
 // Run an npm step with live terminal output AND capture it to the UTF-8 log.
 // Output is piped (not inherited) so we can tee it; the steps are non-interactive.
-function run(label, args) {
+// extraEnv is merged over the inherited environment for this step only, so a
+// single step can opt into build-time values without leaking them elsewhere.
+function run(label, args, extraEnv) {
   return new Promise((resolve) => {
     const child = spawn(npmCommand, args, {
       stdio: ['inherit', 'pipe', 'pipe'],
-      env: { ...process.env, PLAYWRIGHT_PORT: port },
+      env: { ...process.env, PLAYWRIGHT_PORT: port, ...(extraEnv || {}) },
       shell: process.platform === 'win32',
     });
     child.stdout.on('data', (d) => emit(process.stdout, d.toString()));
@@ -144,10 +146,10 @@ function run(label, args) {
   });
 }
 
-async function runStep(label, args) {
+async function runStep(label, args, extraEnv) {
   say(`\n[release-gate] --- ${label} ---`);
   say(`[release-gate] $ ${npmCommand} ${args.join(' ')}`);
-  const code = await run(label, args);
+  const code = await run(label, args, extraEnv);
   if (code !== 0) {
     sayErr(`[release-gate] FAILED at step: ${label} (exit ${code})`);
     process.exit(code || 1);
@@ -180,8 +182,26 @@ for (const suite of resolved) {
 }
 
 // --- Steps: lint -> build -> DB validation -> Playwright --------------------
+
+// Dummy live-data inputs for the BUILD step only. These are for non-deployed
+// builds only (the release gate never deploys); they satisfy the live-data
+// guard in scripts/flags.ts so the gate can compile a production bundle without
+// pointing it at real Supabase credentials, and they are deliberately NOT
+// applied to any other step so nothing else can consume them.
+const nonDeployedBuildEnv = {
+  VITE_USE_SUPABASE_CATALOG: 'true',
+  VITE_USE_SUPABASE_DROPS: 'true',
+  VITE_USE_SUPABASE_CART: 'true',
+  VITE_USE_SUPABASE_WISHLIST: 'true',
+  VITE_USE_SUPABASE_ORDERS: 'true',
+  VITE_USE_SUPABASE_CHECKOUT: 'true',
+  VITE_USE_SUPABASE_AUTH: 'true',
+  VITE_SUPABASE_URL: 'https://gate-build.supabase.co',
+  VITE_SUPABASE_ANON_KEY: 'gate-build-anon-key',
+};
+
 await runStep('lint (eslint + tsc --noEmit)', ['run', 'lint']);
-await runStep('build (tsc + vite + esbuild)', ['run', 'build']);
+await runStep('build (tsc + vite + esbuild)', ['run', 'build'], nonDeployedBuildEnv);
 await runStep('DB validation (pg-mem migrations + RLS)', ['exec', '--', 'tsx', 'supabase/tests/validate_database.ts']);
 
 // --- Playwright: one invocation per suite -----------------------------------
