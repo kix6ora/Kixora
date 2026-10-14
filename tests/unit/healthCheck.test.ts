@@ -16,12 +16,20 @@ vi.mock('../../src/lib/supabaseAdmin', () => ({
   getSupabaseAdmin: () => ({ from: state.from }),
 }));
 
+vi.mock('../../src/config/env', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../src/config/env')>();
+  return {
+    ...actual,
+    validateProductionEnv: () => ({ valid: true, errors: [] as string[] }),
+  };
+});
+
 vi.mock('../../logger', () => ({
   logger: { error: vi.fn() },
 }));
 
 import { logger } from '../../logger';
-import { healthCheck } from '../../src/lib/healthCheck';
+import { livenessCheck, readinessCheck } from '../../src/lib/healthCheck';
 
 function createResponse() {
   return {
@@ -38,7 +46,7 @@ function createResponse() {
   };
 }
 
-describe('health check endpoint', () => {
+describe('liveness check endpoint', () => {
   beforeEach(() => {
     state.error = null;
     state.thrown = null;
@@ -51,62 +59,103 @@ describe('health check endpoint', () => {
     vi.mocked(logger.error).mockClear();
   });
 
-  it('uses the admin client ping and preserves the healthy response shape', async () => {
-    const previousCommit = process.env.RENDER_GIT_COMMIT;
-    process.env.RENDER_GIT_COMMIT = '1234567890abcdef';
+  it('returns 200 with a small body and no dependency checks', async () => {
     const response = createResponse();
 
-    await healthCheck({} as never, response as never, vi.fn());
+    await livenessCheck({} as never, response as never, vi.fn());
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
       status: 'ok',
-      commit: '1234567',
-      domain: expect.any(String),
-      timestamp: expect.any(String),
       uptime: expect.any(Number),
+      timestamp: expect.any(String),
+    });
+    expect(state.from).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 even when the Supabase check rejects', async () => {
+    state.thrown = new Error('supabase is down');
+    const response = createResponse();
+
+    await livenessCheck({} as never, response as never, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({ status: 'ok' });
+    expect(state.from).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 even when the Supabase check reports unhealthy', async () => {
+    state.error = { code: '42501', message: 'permission denied for table profiles' };
+    const response = createResponse();
+
+    await livenessCheck({} as never, response as never, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({ status: 'ok' });
+    expect(state.from).not.toHaveBeenCalled();
+  });
+
+  it('exposes no secrets, urls or keys in the body', async () => {
+    const response = createResponse();
+
+    await livenessCheck({} as never, response as never, vi.fn());
+
+    const serialized = JSON.stringify(response.body);
+    expect(Object.keys(response.body as Record<string, unknown>).sort()).toEqual([
+      'status',
+      'timestamp',
+      'uptime',
+    ]);
+    expect(serialized).not.toMatch(/key|secret|token|password|url|http/i);
+  });
+});
+
+describe('readiness check endpoint', () => {
+  beforeEach(() => {
+    state.error = null;
+    state.thrown = null;
+    state.from.mockReset().mockReturnValue({ select: state.select });
+    state.select.mockReset().mockReturnValue({ limit: state.limit });
+    state.limit.mockReset().mockImplementation(async () => {
+      if (state.thrown) throw state.thrown;
+      return { error: state.error };
+    });
+    vi.mocked(logger.error).mockClear();
+  });
+
+  it('uses the admin client ping and preserves the deploy labels', async () => {
+    const previousCommit = process.env.RENDER_GIT_COMMIT;
+    const previousServiceName = process.env.RENDER_SERVICE_NAME;
+    process.env.RENDER_GIT_COMMIT = '1234567890abcdef';
+    process.env.RENDER_SERVICE_NAME = 'kixora-staging';
+    const response = createResponse();
+
+    await readinessCheck({} as never, response as never, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      status: 'ready',
+      commit: '1234567',
+      domain: 'kixora-staging',
+      timestamp: expect.any(String),
       checks: { database: 'healthy', supabase: 'healthy' },
     });
     if (previousCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
     else process.env.RENDER_GIT_COMMIT = previousCommit;
+    if (previousServiceName === undefined) delete process.env.RENDER_SERVICE_NAME;
+    else process.env.RENDER_SERVICE_NAME = previousServiceName;
     expect(state.from).toHaveBeenCalledWith('profiles');
     expect(state.select).toHaveBeenCalledWith('id');
     expect(state.limit).toHaveBeenCalledWith(1);
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('prefers RENDER_SERVICE_NAME for the domain label when defined', async () => {
-    const previousServiceName = process.env.RENDER_SERVICE_NAME;
-    process.env.RENDER_SERVICE_NAME = 'kixora-staging';
-    const response = createResponse();
-
-    await healthCheck({} as never, response as never, vi.fn());
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toMatchObject({ domain: 'kixora-staging' });
-    if (previousServiceName === undefined) delete process.env.RENDER_SERVICE_NAME;
-    else process.env.RENDER_SERVICE_NAME = previousServiceName;
-  });
-
-  it('falls back to the built-in domain labels when RENDER_SERVICE_NAME is unset', async () => {
-    const previousServiceName = process.env.RENDER_SERVICE_NAME;
-    delete process.env.RENDER_SERVICE_NAME;
-    const response = createResponse();
-
-    await healthCheck({} as never, response as never, vi.fn());
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toMatchObject({
-      domain: process.env.NODE_ENV === 'production' ? 'kixora-production' : 'kixora-development',
-    });
-    if (previousServiceName !== undefined) process.env.RENDER_SERVICE_NAME = previousServiceName;
-  });
-
-  it('returns degraded health and logs only the database error code and message', async () => {
+  it('returns 503 when the Supabase check is unhealthy', async () => {
     state.error = { code: '42501', message: 'permission denied for table profiles' };
     const response = createResponse();
 
-    await healthCheck({} as never, response as never, vi.fn());
+    await readinessCheck({} as never, response as never, vi.fn());
 
     expect(response.statusCode).toBe(503);
     expect(response.body).toMatchObject({
@@ -117,5 +166,45 @@ describe('health check endpoint', () => {
       code: '42501',
       message: 'permission denied for table profiles',
     });
+  });
+
+  it('returns 503 when the Supabase check rejects', async () => {
+    state.thrown = new Error('connection refused');
+    const response = createResponse();
+
+    await readinessCheck({} as never, response as never, vi.fn());
+
+    expect(response.statusCode).toBe(503);
+    expect(response.body).toMatchObject({ status: 'degraded' });
+  });
+
+  it('includes the active payment provider mode as a plain string', async () => {
+    const response = createResponse();
+
+    await readinessCheck({} as never, response as never, vi.fn());
+
+    const body = response.body as { checks: { paymentProvider: unknown } };
+    expect(['payfast', 'mock']).toContain(body.checks.paymentProvider);
+  });
+
+  it('exposes the webhook-configured flags as booleans', async () => {
+    const response = createResponse();
+
+    await readinessCheck({} as never, response as never, vi.fn());
+
+    const body = response.body as {
+      checks: { payfastWebhookConfigured: unknown; shippingWebhookConfigured: unknown };
+    };
+    expect(typeof body.checks.payfastWebhookConfigured).toBe('boolean');
+    expect(typeof body.checks.shippingWebhookConfigured).toBe('boolean');
+  });
+
+  it('exposes no secrets, urls or keys in the body', async () => {
+    const response = createResponse();
+
+    await readinessCheck({} as never, response as never, vi.fn());
+
+    const serialized = JSON.stringify(response.body);
+    expect(serialized).not.toMatch(/passphrase|service_role|api[_-]?key|secret|token|http/i);
   });
 });

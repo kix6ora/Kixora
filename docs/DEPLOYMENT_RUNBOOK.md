@@ -60,8 +60,9 @@ Build-time public values (inlined into the bundle at **build** time):
 1. Merge into `develop` (or run the **Deploy (Render)** workflow with target
    `staging`).
 2. The workflow asserts the environment contract, calls the Render staging Deploy
-   Hook, then polls `/api/health` until `status` is `ok`.
-3. Smoke-test `/api/health` and `/api/ready` before treating staging as green.
+   Hook, then polls `/api/health` (liveness) until `status` is `ok`.
+3. Smoke-test `/api/health` (liveness) and `/api/ready` (readiness) before
+   treating staging as green.
 4. Run the staging smoke suite and confirm the app is reachable from the intended
    public domain.
 
@@ -75,6 +76,13 @@ Build-time public values (inlined into the bundle at **build** time):
 4. Monitor logs and error events for the first 30–60 minutes before considering the
    deployment fully stable.
 
+## Health probes
+
+- Render's `healthCheckPath` is `/api/health` (liveness). It returns HTTP 200
+  while the process is alive and performs no dependency checks.
+- `/api/ready` is for readiness and uptime probes. It owns the Supabase
+  dependency check and returns HTTP 503 when degraded, HTTP 200 when ready.
+
 ## Rollback
 
 1. In the Render dashboard, redeploy the **previous successful deploy** for the
@@ -82,7 +90,8 @@ Build-time public values (inlined into the bundle at **build** time):
 2. If the issue is application configuration, revert the environment values and
    trigger a new deploy. Remember `VITE_*` changes require a rebuild.
 3. Confirm the previous version is healthy by hitting `/api/health` and `/api/ready`
-   and loading the storefront home page.
+   and loading the storefront home page, then re-check `/api/ready` to confirm
+   the rolled-back deploy reports ready before treating the rollback as done.
 4. If a migration caused the incident, apply a **new forward migration** that
    reverts the change. Never edit or delete an applied migration.
 5. Capture the incident in the release record and keep the failing commit SHA.
@@ -106,6 +115,6 @@ Do not proceed with a production release if any of the following are true:
 - production secrets are missing from the environment
 - any `VITE_USE_SUPABASE_*` flag is not `true`
 - `VITE_PAYMENT_PROVIDER_MODE` is not `payfast`, or `VITE_PAYFAST_SANDBOX` is `true`
-- `/api/health` fails or `/api/ready` returns `not_ready`
+- `/api/health` fails or `/api/ready` returns `degraded` (HTTP 503)
 - webhook verification fails in staging or production
 - `npm audit --audit-level=high` reports a high or critical finding
