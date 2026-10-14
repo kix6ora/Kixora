@@ -3,6 +3,7 @@ import { logger } from '../../logger';
 import { getEnvConfig, getServerConfig, validateProductionEnv } from '../config/env';
 import { isSupabaseConfigured } from './supabase';
 import { getSupabaseAdmin } from './supabaseAdmin';
+import { describeCarrierMode } from '../services/shipping/carrierCapabilities';
 
 function getDomainLabel(): string {
   return process.env.RENDER_SERVICE_NAME ||
@@ -77,6 +78,7 @@ export const readinessCheck: RequestHandler = async (_req, res) => {
       paymentProvider,
       payfastWebhookConfigured: Boolean(serverConfig.payfastPassphrase),
       shippingWebhookConfigured: Boolean(serverConfig.shippingWebhookSecret),
+      carrier: describeCarrierMode(),
     },
   };
 

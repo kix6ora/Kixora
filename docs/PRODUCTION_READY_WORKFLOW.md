@@ -17,7 +17,7 @@ into Claude / Cline / Copilot / Codex for that phase. Standing rules live in
 > | 0 Baseline / hygiene | ✅ done | Dead artifacts, `engines`, `.gitignore`, governance docs all landed. |
 > | 1 De-platform to Render | ✅ done | Cloud Run workflows deleted, `render.yaml` + `deploy-render.yml` added, `verify-deploy-env.mjs` rewritten. |
 > | 2 Supabase single source | 🟡 partial | Migrations 0034–0037 landed (RLS lockdown, admin hardening, flat-rate). Live projects, flags and media migration still open. |
-> | 3 Drivers | 🟡 partial | `SimulatedCourierGuyDriver` + fail-closed shipping done; mock driver still bundled; real Courier Guy API not built. |
+> | 3 Drivers | 🟡 partial | Carrier deferral recorded + enforced (loud fallback, typed errors, `/api/ready`); mock payment driver still bundled (T6); live Courier Guy API deferred. |
 > | 4 Build/runtime integrity | ✅ mostly | SW versioned + network-first, `/api/health` vs `/api/ready` split, live-data build gate wired, CSP strict. |
 > | 5 Security verification | 🟡 partial | RLS hardening landed; `csurf` and the rate-limit store are resolved (ADRs 0001/0002); no live staging evidence yet. |
 > | 6 Payments/fulfilment E2E | ⬜ not started | No live PayFast/Resend/carrier proof. |
@@ -100,7 +100,7 @@ Supabase
 |---|---|---|---|---|
 | C1 | **Critical** | Two deployment platforms in one repo. Cloud Run workflows + GCP secrets coexist with Render URLs. | `.github/workflows/deploy-*.yml`, `.env.example` | ✅ **Fixed** — Cloud Run workflows deleted; `deploy-render.yml` added; `.env.example` GCP vars removed. |
 | C2 | **Critical** | `firebase-applet-config.json` ships a real Firebase API key in git history. | repo root | 🟡 **File deleted on `develop`; key rotation still outstanding (human).** Deleting the file does not revoke the key. |
-| C3 | **Critical** | Carrier "integration" is simulated but named as if live: hard-coded rates, random waybills, invented tracking events. | `src/services/shipping/carrierDrivers.ts` | 🟡 **Partial** — renamed `SimulatedCourierGuyDriver`, `isSimulated = true`; production fails closed for labels/tracking and returns a flat-rate estimate for quotes. Real Courier Guy API still not implemented. |
+| C3 | **Critical** | Carrier "integration" is simulated but named as if live: hard-coded rates, random waybills, invented tracking events. | `src/services/shipping/carrierDrivers.ts` | ✅ **Deferred (recorded + enforced)** — simulated driver is production-rejected; production quotes are an explicit `isEstimate` flat rate with a warning log; labels throw a typed `CarrierCapabilityError`; tracking returns a coded degraded result; carrier mode is on `/api/ready`. Live integration recorded as an accepted go/no-go deferral. |
 | C4 | **Critical** | Sentry is configured (`SENTRY_DSN`) but there is **no Sentry SDK** in `package.json`; `monitoringService` POSTs JSON at the DSN URL, which is not an ingestion endpoint. | `src/services/monitoringService.ts`, `package.json` | ✅ **Fixed** — `@sentry/react` + `@sentry/node` v11 installed; SDK init in `src/lib/sentry*.ts`, wired from `server.ts` + `src/main.tsx`; fake POST removed. Set `SENTRY_DSN` to activate. |
 | C5 | **High** | PWA service worker is cache-first for every GET including navigations, with a static cache name. | `public/sw.js` | ✅ **Fixed** — `kixora-shell-${BUILD_ID}` (build-injected), network-first navigation, cache-first `/assets/*` only, never caches `/api/*`, `SKIP_WAITING` channel. |
 | C6 | **High** | CSP still allows `'unsafe-inline'` and `'unsafe-eval'` in `script-src` in production. | `server.ts` L91 | ✅ **Fixed** — production `script-src 'self'`; crawler inline `<script>` replaced with `<meta http-equiv="refresh">`; dev keeps the relaxed directives. |
@@ -116,8 +116,9 @@ Supabase
 | C16 | **Low** | Duplicated `playwright-report/` entry in `.gitignore`; duplicated "Stop local Supabase" step. | `.gitignore`, `staging.yml` | ✅ **Fixed** — single entry, single step. |
 
 Legend: ✅ fixed on `develop` · 🟡 partial or needs a human action · ⬜ still open.
-The remaining build-blocking item is the unbuilt real carrier (C3); C4, C6, C7, C9,
-C11–C14 and C16 are resolved. See `docs/HUMAN_ACTIONS.md` for what only you can do.
+All Critical/High code findings (C3, C4, C6, C7, C9, C11–C14, C16) are resolved or
+recorded as accepted deferrals. What remains is verification against live
+infrastructure plus the human actions in `docs/HUMAN_ACTIONS.md`.
 
 ### A.4 Stack-fit verdict
 

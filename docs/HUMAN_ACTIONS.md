@@ -97,7 +97,7 @@ Remove these GitHub secrets: `GCP_PROJECT_ID`, `GCP_SERVICE_ACCOUNT_KEY`,
 |---|---|---|
 | 8.1 | 🟠 PayFast: sandbox then live credentials. | `VITE_PAYFAST_MERCHANT_ID`, `VITE_PAYFAST_MERCHANT_KEY`, `PAYFAST_PASSPHRASE`. Set the ITN URL to `https://<customer-origin>/api/webhooks/payfast`. |
 | 8.2 | 🟠 Resend: verify the sending domain (SPF, DKIM, DMARC). | Set `RESEND_API_KEY` and `EMAIL_FROM`. Confirm a confirmation email lands in the inbox, not spam. |
-| 8.3 | 🟠 The Courier Guy: provide `THE_COURIER_GUY_API_KEY`, or accept the deferral. | The real carrier API is not implemented. Production currently fails closed for labels/tracking and returns a flat-rate estimate for quotes (`src/services/shipping/flatRate.ts`). Record the decision in the go/no-go doc. |
+| 8.3 | 🟠 The Courier Guy: **sign the recorded deferral, or provide `THE_COURIER_GUY_API_KEY`.** | Deferral recorded in `docs/production-evidence/go-no-go.md` (Deferral 1). Code is enforced: quotes carry `isEstimate: true` + a `logger.warn`; labels throw `CarrierCapabilityError`; tracking returns an `errorCode`; `/api/ready` reports `carrier`. Confirmed API facts for the follow-up are in `src/services/shipping/carrierCapabilities.ts`. |
 | 8.4 | 🟠 Set `SHIPPING_WEBHOOK_SECRET`. | Required for the carrier tracking webhook HMAC. |
 
 ## 9. DNS
@@ -133,7 +133,9 @@ evidence link for every line above. No item may be "assumed".
 - [ ] 5 GCP secrets deleted
 - [ ] 6.1–6.5 Supabase projects, migrations, grants, admin role, Realtime
 - [ ] 7.1–7.2 Sentry DSN set and one live event confirmed
-- [ ] 8.1–8.4 PayFast, Resend, carrier, webhook secret
+- [ ] 8.1–8.2 PayFast, Resend
+- [ ] 8.3 carrier deferral signed **or** `THE_COURIER_GUY_API_KEY` supplied
+- [ ] 8.4 `SHIPPING_WEBHOOK_SECRET`
 - [ ] 9.1–9.3 DNS + TLS + matching origins
 - [ ] 10 smoke tests + go/no-go record
 

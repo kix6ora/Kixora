@@ -19,7 +19,7 @@ This is the evidence-based remainder. Everything in §7 is already done — do n
 | T2 | ✅ | **DONE — CSP tightening.** `script-src` is now `'self'` in production (no `'unsafe-inline'`/`'unsafe-eval'`); the crawler inline `<script>` became a `<meta http-equiv="refresh">`. | `server.ts`, `src/config/cspImageSources.ts` | Verified live header `script-src 'self'`. Evidence: `docs/production-evidence/t1-t2-sentry-csp.md`. |
 | T3 | ✅ | **DONE — Replace `csurf`.** Removed from deps; `src/server/csrf.ts` implements a Fetch Metadata (`Sec-Fetch-Site`) guard + double-submit cookie. ADR: `docs/adr/0001-csrf-double-submit.md`. | `src/server/csrf.ts`, `server.ts`, `package.json` | Verified live: 403 on missing/cross-site, token accepted. Evidence: `docs/production-evidence/t3-t4-csrf-ratelimit.md`. |
 | T4 | ✅ | **DONE — Rate-limit store.** Policies extracted to `src/server/rateLimit.ts` (unit-tested); per-instance limits accepted and `numInstances: 1` pinned with an ADR reference in `render.yaml`. ADR: `docs/adr/0002-rate-limit-store.md`. | `src/server/rateLimit.ts`, `render.yaml` | Single-instance asserted in `render.yaml`; startup log reports the store mode. Evidence: `docs/production-evidence/t3-t4-csrf-ratelimit.md`. |
-| T5 | 🟠 | **Real carrier or explicit deferral.** Either implement The Courier Guy API (rates/waybill/tracking) or record the simulated-carrier + flat-rate path as an accepted go/no-go deferral. Production currently fails closed for labels/tracking and returns a flat-rate estimate for quotes. | `src/services/shipping/carrierDrivers.ts`, `shippingService.ts`, `flatRate.ts`, `README.md` | Live waybill + tracking webhook, **or** signed deferral in the go/no-go record. |
+| T5 | ✅ | **DONE — Carrier deferral recorded and enforced.** The live The Courier Guy API is deferred (auth scheme + shipment/label paths unconfirmed; no credential). Production now: quotes carry `isEstimate: true` + a `logger.warn` (no longer silent), labels throw `CarrierCapabilityError`, tracking returns `errorCode`, `/api/ready` reports `carrier`, and the simulated driver is production-rejected. Status source of truth: `src/services/shipping/carrierCapabilities.ts`. | `carrierCapabilities.ts`, `shippingService.ts`, `carrierTypes.ts`, `healthCheck.ts` | Deferral signed in `docs/production-evidence/go-no-go.md`; enforced in code + unit tests. |
 | T6 | 🟠 | **Mock payment driver out of the bundle.** `MockPaymentDriver` is still bundled (`pi_mock_` in `dist/`); runtime-guarded but not bundler-excluded. Convert to a conditional dynamic `import()` behind `if (!import.meta.env.PROD)`. | `src/services/payments/index.ts` | `grep -rl "pi_mock_" dist/` prints nothing. |
 | T7 | 🟡 | **Retire stale docs.** `docs/PRODUCTION_PHASES.md` names the wrong repo/branch. Replace with a pointer to this file, or delete. | `docs/PRODUCTION_PHASES.md` | No doc references a non-existent repo/branch. |
 | T8 | 🟡 | **Admin flags parity.** `VITE_USE_SUPABASE_ADMIN*` exist in `.env.example` but not in `render.yaml` or the `scripts/flags.ts` gate. Decide whether they are load-bearing; add them or remove them. | `.env.example`, `render.yaml`, `scripts/flags.ts` | Config contract consistent across all three. |
@@ -120,7 +120,7 @@ T6 mock driver out of the bundle → T9–T15 Supabase live
   → T28–T33 cutover + go/no-go
 ```
 
-*(T1 Sentry, T2 CSP, T3 csurf and T4 rate-limit store are done — evidence in
-`docs/production-evidence/`.)*
+*(T1 Sentry, T2 CSP, T3 csurf, T4 rate-limit store and T5 carrier deferral are done
+— evidence in `docs/production-evidence/`.)*
 
 Human-only steps are consolidated in **`docs/HUMAN_ACTIONS.md`**.

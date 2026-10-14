@@ -154,3 +154,40 @@ describe('mock payment driver production guard', () => {
     expect(() => getPaymentDriver('mock')).toThrow();
   });
 });
+
+describe('carrier deferral enforcement (T5)', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  it('marks the production flat-rate quote as an estimate, not a live rate', async () => {
+    process.env.NODE_ENV = 'production';
+    const quotes = await shippingService.calculateRates(zuluDestination());
+    expect(quotes[0].isEstimate).toBe(true);
+  });
+
+  it('fails closed with a typed error for production labels', async () => {
+    process.env.NODE_ENV = 'production';
+    await expect(
+      shippingService.createShipmentLabel({
+        orderId: 'order-1',
+        orderCode: 'KIX-1',
+        recipient: zuluDestination().destination,
+        itemsSummary: [],
+      }),
+    ).rejects.toMatchObject({
+      name: 'CarrierCapabilityError',
+      code: 'CARRIER_LABEL_NOT_IMPLEMENTED',
+    });
+  });
+
+  it('fails closed with a coded degraded result for production tracking', async () => {
+    process.env.NODE_ENV = 'production';
+    const result = await shippingService.getTracking('TCG123ZA');
+    expect(result.errorCode).toBe('CARRIER_TRACKING_NOT_IMPLEMENTED');
+    expect(result.events).toEqual([]);
+    expect(result.status).toBe('PENDING_PICKUP');
+  });
+});
