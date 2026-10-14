@@ -7,7 +7,10 @@
  * Compatibility contract (do not change without updating the ADR and the
  * Playwright security specs):
  *   - cookie name: csrf_secret
- *   - header name: csrf-token
+ *   - header name: csrf-token (case-insensitive)
+ *   - accepted aliases: x-csrf-token, xsrf-token, x-xsrf-token — kept for
+ *     backward compatibility with clients written against the previous
+ *     `csurf` middleware, which accepted all of these spellings.
  *   - endpoints:  GET /api/csrf, GET /api/csrf-token -> { csrfToken }
  *   - rejection:  403 { error: 'Invalid CSRF token' }
  */
@@ -16,6 +19,17 @@ import type { Request, RequestHandler } from 'express';
 
 export const CSRF_COOKIE_NAME = 'csrf_secret';
 export const CSRF_HEADER_NAME = 'csrf-token';
+/**
+ * Header names accepted for the submitted token, in priority order. The first
+ * entry is the documented contract; the remainder are the aliases `csurf`
+ * accepted so existing clients keep working after the migration.
+ */
+export const CSRF_HEADER_NAMES = [
+  CSRF_HEADER_NAME,
+  'x-csrf-token',
+  'xsrf-token',
+  'x-xsrf-token',
+] as const;
 const CSRF_TOKEN_BYTES = 32;
 
 type Cookies = Record<string, string | undefined>;
@@ -34,10 +48,15 @@ export function csrfTokensMatch(cookieToken?: string, submittedToken?: string): 
   return timingSafeEqual(a, b);
 }
 
-/** Reads the submitted token from the csrf-token header, then the `_csrf` body field. */
+/**
+ * Reads the submitted token from an accepted CSRF header (`csrf-token` or one
+ * of the `csurf` aliases), then the `_csrf` body field.
+ */
 export function readSubmittedCsrfToken(req: CookieRequest): string | undefined {
-  const header = req.headers[CSRF_HEADER_NAME];
-  if (typeof header === 'string' && header.length > 0) return header;
+  for (const name of CSRF_HEADER_NAMES) {
+    const header = req.headers[name];
+    if (typeof header === 'string' && header.length > 0) return header;
+  }
   const body = req.body as { _csrf?: unknown } | undefined;
   if (body && typeof body._csrf === 'string' && body._csrf.length > 0) return body._csrf;
   return undefined;

@@ -81,6 +81,8 @@ describe('csrf token helpers', () => {
 
   it('reads the token from the header first, then the body', () => {
     expect(readSubmittedCsrfToken(makeRequest({ headers: { 'csrf-token': 'h' } }) as never)).toBe('h');
+    expect(readSubmittedCsrfToken(makeRequest({ headers: { 'x-csrf-token': 'h' } }) as never)).toBe('h');
+    expect(readSubmittedCsrfToken(makeRequest({ headers: { 'x-xsrf-token': 'h' } }) as never)).toBe('h');
     expect(readSubmittedCsrfToken(makeRequest({ body: { _csrf: 'b' } }) as never)).toBe('b');
     expect(
       readSubmittedCsrfToken(makeRequest({ headers: { 'csrf-token': 'h' }, body: { _csrf: 'b' } }) as never),

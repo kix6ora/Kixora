@@ -37,6 +37,9 @@ double-submit pattern is stateless.
 
 - Cookie name: `csrf_secret`
 - Header name: `csrf-token` (case-insensitive)
+- Accepted header aliases: `x-csrf-token`, `xsrf-token`, `x-xsrf-token` — kept
+  for backward compatibility with clients written against `csurf`, which
+  accepted all of these spellings.
 - Endpoints: `GET /api/csrf` and `GET /api/csrf-token` → `{ csrfToken }`
 - Rejection: HTTP 403 `{ "error": "Invalid CSRF token" }`
 
