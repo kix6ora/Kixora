@@ -12,7 +12,7 @@ import { trackingWebhookService } from './src/services/shipping/trackingWebhookS
 import { emailService } from './src/services/email/emailService';
 import { getEnvConfig, getServerConfig, validateProductionEnv } from './src/config/env';
 import { logger } from './logger';
-import { healthCheck } from './src/lib/healthCheck';
+import { livenessCheck, readinessCheck } from './src/lib/healthCheck';
 import { getSupabaseAdmin } from './src/lib/supabaseAdmin';
 import { authorizePayFastOrder, initiatePayFastCheckout } from './src/services/payments/payfastCheckout';
 import { buildCspConnectSources, buildCspImageSources, buildCspWorkerSources } from './src/config/cspImageSources';
@@ -281,27 +281,9 @@ async function startServer() {
     next();
   });
 
-  app.get('/api/health', healthCheck);
+  app.get('/api/health', livenessCheck);
 
-  app.get('/api/ready', (_req, res) => {
-    const config = validateProductionEnv();
-    if (!config.valid) {
-      return res.status(503).json({
-        status: 'not_ready',
-        checks: { configuration: false },
-      });
-    }
-
-    return res.json({
-      status: 'ready',
-      checks: {
-        configuration: true,
-        paymentProvider: clientConfig.paymentProviderMode,
-        payfastWebhookConfigured: Boolean(startupConfig.payfastPassphrase),
-        shippingWebhookConfigured: Boolean(startupConfig.shippingWebhookSecret),
-      },
-    });
-  });
+  app.get('/api/ready', readinessCheck);
 
   if (process.env.NODE_ENV === 'test') {
     app.use('/rest/v1', (_req, res) => {
