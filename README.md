@@ -4,9 +4,10 @@ Kixora is a premium sneaker e-commerce web application with a customer storefron
 
 ## Shipping in production
 
-**Decision:** in production, shipping quotes come from a deterministic flat-rate table in
-`src/services/shipping/shippingService.ts` (Gauteng R150, Western Cape R200, other provinces R120;
-free shipping above R1,500), returned in ZAR as a single `prod-flat-rate-estimate` quote. The
+**Decision:** in production, shipping quotes come from a deterministic flat rate in
+`src/services/shipping/flatRate.ts` (R200 flat for all of South Africa; free when
+(subtotal minus discount) is strictly greater than R2000; exactly R2000 pays R200;
+empty cart is R0), returned in ZAR as a single `prod-flat-rate-estimate` quote. The
 service does not call carrier APIs in production and does not throw when carrier credentials are
 missing.
 

@@ -133,6 +133,24 @@ Render dashboard and the authoritative DNS provider console before marking compl
 
 ---
 
+## Shipping (flat-rate)
+
+- Flat rate **R200** for all of South Africa; free when (subtotal minus discount)
+  is **strictly greater than R2000**. Exactly R2000 pays R200; an empty cart is R0.
+- The database functions `place_order_atomic` and `create_pending_order_atomic`
+  are the authority for the order total.
+- The carrier driver is `SimulatedCourierGuyDriver`; it is rejected in
+  production (`SIMULATED_PROVIDER_NOT_ALLOWED_IN_PRODUCTION`) and no live carrier
+  API is used while shipping is flat-rate.
+
+## Refunds
+
+- PayFast refunds are **not implemented in code**: `processRefund` fails closed
+  (returns `success: false`, no refund is created).
+- Refunds must be done manually in the PayFast dashboard.
+
+---
+
 ## 5. Post-Launch Smoke Tests & Verification Plan
 
 ### Automated Smoke Test Checklist
