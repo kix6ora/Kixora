@@ -16,6 +16,14 @@ the stricter rule. Phase-specific rules are in
   it does not exist.
 - If something is ambiguous or a test fails, stop and ask. Do not improvise.
 
+## §Style
+
+- Smallest viable diff. Do not touch a file that is not in scope.
+- Report only what you ran. No summaries of files you read but did not change.
+- No busywork: no extra tests, docs, or refactors the task did not ask for.
+- Verify with the four commands below and nothing more. Do not invent gates.
+- One corrective action at a time; if blocked, say so in one line and stop.
+
 ## §Commands
 
 - Node 22, **npm only — never bun**. Do not run `npm install` or `npm ci` unless
