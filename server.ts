@@ -15,9 +15,11 @@ import { logger } from './logger';
 import { livenessCheck, readinessCheck } from './src/lib/healthCheck';
 import { getSupabaseAdmin } from './src/lib/supabaseAdmin';
 import { authorizePayFastOrder, initiatePayFastCheckout } from './src/services/payments/payfastCheckout';
-import { buildCspConnectSources, buildCspImageSources, buildCspWorkerSources } from './src/config/cspImageSources';
+import { buildCspConnectSources, buildCspImageSources, buildCspScriptSources, buildCspWorkerSources } from './src/config/cspImageSources';
 import { mountProductionStaticAssets } from './src/server/staticAssets';
 import { isRateLimitExempt } from './src/server/rateLimitSkip';
+import { initSentry } from './src/lib/sentryServer';
+import { monitoringService } from './src/services/monitoringService';
 
 /**
  * Kixora Production Server (Express + Vite)
@@ -46,6 +48,10 @@ async function startServer() {
     payfastWebhookConfigured: Boolean(startupConfig.payfastPassphrase),
     shippingWebhookConfigured: Boolean(startupConfig.shippingWebhookSecret),
   });
+
+  // Error tracking is real only when the SDK initialises (SENTRY_DSN present).
+  const sentryEnabled = initSentry();
+  logger.info('[Startup] Error tracking', { sentryEnabled });
 
   // ===========================================================================
   // REQUEST CONTEXT & LOGGING (Task 2)
@@ -88,7 +94,7 @@ async function startServer() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        scriptSrc: buildCspScriptSources(isProduction),
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: buildCspImageSources(),
         connectSrc: [
@@ -272,7 +278,7 @@ async function startServer() {
           <body>
             <h1>Kixora</h1>
             <p>Loading sneaker details...</p>
-            <script>window.location.href = "/?product=${productId}";</script>
+            <meta http-equiv="refresh" content="0; url=/?product=${encodeURIComponent(productId)}" />
           </body>
         </html>
       `;
@@ -529,7 +535,7 @@ async function startServer() {
   });
 
   // Global Error Handler for API & Payload errors
-  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (err) {
       if (err.code === 'EBADCSRFTOKEN') {
         return res.status(403).json({ error: 'Invalid CSRF token' });
@@ -542,6 +548,14 @@ async function startServer() {
         return res.status(403).json({ error: 'Blocked by CORS allowlist' });
       }
       logger.error('[Express Server Error]', { message: err.message, stack: err.stack });
+      void monitoringService.reportError(
+        err instanceof Error ? err : new Error(err?.message ?? 'Unknown error'),
+        {
+          component: 'express',
+          action: `${req.method} ${req.path}`,
+          requestId: (req as express.Request & { requestId?: string }).requestId,
+        },
+      );
       return res.status(err.status || 500).json({ error: 'Internal server error' });
     }
     next();

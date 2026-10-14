@@ -38,3 +38,17 @@ export function buildCspConnectSources(modelBaseUrl?: string): string[] {
 export function buildCspWorkerSources(): string[] {
   return ["'self'", 'blob:'];
 }
+
+/**
+ * Script sources for the Content Security Policy.
+ *
+ * A production Vite build emits an `index.html` whose only script tag is an
+ * external module script, so `'self'` is sufficient and both `'unsafe-inline'`
+ * and `'unsafe-eval'` are removed. The Vite dev server injects inline HMR
+ * scripts and evaluates module code, so development keeps the relaxed directive.
+ */
+export function buildCspScriptSources(isProduction: boolean): string[] {
+  return isProduction
+    ? ["'self'"]
+    : ["'self'", "'unsafe-inline'", "'unsafe-eval'"];
+}

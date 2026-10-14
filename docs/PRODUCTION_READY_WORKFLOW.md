@@ -18,10 +18,10 @@ into Claude / Cline / Copilot / Codex for that phase. Standing rules live in
 > | 1 De-platform to Render | ✅ done | Cloud Run workflows deleted, `render.yaml` + `deploy-render.yml` added, `verify-deploy-env.mjs` rewritten. |
 > | 2 Supabase single source | 🟡 partial | Migrations 0034–0037 landed (RLS lockdown, admin hardening, flat-rate). Live projects, flags and media migration still open. |
 > | 3 Drivers | 🟡 partial | `SimulatedCourierGuyDriver` + fail-closed shipping done; mock driver still bundled; real Courier Guy API not built. |
-> | 4 Build/runtime integrity | ✅ mostly | SW versioned + network-first, `/api/health` vs `/api/ready` split, live-data build gate wired. CSP still open. |
+> | 4 Build/runtime integrity | ✅ mostly | SW versioned + network-first, `/api/health` vs `/api/ready` split, live-data build gate wired, CSP strict. |
 > | 5 Security verification | 🟡 partial | RLS hardening migrations landed; `csurf` and in-memory rate limits still open; no live staging evidence yet. |
 > | 6 Payments/fulfilment E2E | ⬜ not started | No live PayFast/Resend/carrier proof. |
-> | 7 Observability/CI | 🟡 partial | CI + release gate exist; **no Sentry SDK** — error tracking is still fake. |
+> | 7 Observability/CI | 🟡 partial | Sentry SDK wired (T1); CI + release gate exist. Live-event verification still open. |
 > | 8 Launch cutover | ⬜ not started | — |
 >
 > **Corrections to the original draft:** `develop` is 5,094 insertions / 2,635
@@ -101,9 +101,9 @@ Supabase
 | C1 | **Critical** | Two deployment platforms in one repo. Cloud Run workflows + GCP secrets coexist with Render URLs. | `.github/workflows/deploy-*.yml`, `.env.example` | ✅ **Fixed** — Cloud Run workflows deleted; `deploy-render.yml` added; `.env.example` GCP vars removed. |
 | C2 | **Critical** | `firebase-applet-config.json` ships a real Firebase API key in git history. | repo root | 🟡 **File deleted on `develop`; key rotation still outstanding (human).** Deleting the file does not revoke the key. |
 | C3 | **Critical** | Carrier "integration" is simulated but named as if live: hard-coded rates, random waybills, invented tracking events. | `src/services/shipping/carrierDrivers.ts` | 🟡 **Partial** — renamed `SimulatedCourierGuyDriver`, `isSimulated = true`; production fails closed for labels/tracking and returns a flat-rate estimate for quotes. Real Courier Guy API still not implemented. |
-| C4 | **Critical** | Sentry is configured (`SENTRY_DSN`) but there is **no Sentry SDK** in `package.json`; `monitoringService` POSTs JSON at the DSN URL, which is not an ingestion endpoint. | `src/services/monitoringService.ts`, `package.json` | ⬜ **Open** — no SDK installed; error tracking is still fake. |
+| C4 | **Critical** | Sentry is configured (`SENTRY_DSN`) but there is **no Sentry SDK** in `package.json`; `monitoringService` POSTs JSON at the DSN URL, which is not an ingestion endpoint. | `src/services/monitoringService.ts`, `package.json` | ✅ **Fixed** — `@sentry/react` + `@sentry/node` v11 installed; SDK init in `src/lib/sentry*.ts`, wired from `server.ts` + `src/main.tsx`; fake POST removed. Set `SENTRY_DSN` to activate. |
 | C5 | **High** | PWA service worker is cache-first for every GET including navigations, with a static cache name. | `public/sw.js` | ✅ **Fixed** — `kixora-shell-${BUILD_ID}` (build-injected), network-first navigation, cache-first `/assets/*` only, never caches `/api/*`, `SKIP_WAITING` channel. |
-| C6 | **High** | CSP still allows `'unsafe-inline'` and `'unsafe-eval'` in `script-src` in production. | `server.ts` L91 | ⬜ **Open**. |
+| C6 | **High** | CSP still allows `'unsafe-inline'` and `'unsafe-eval'` in `script-src` in production. | `server.ts` L91 | ✅ **Fixed** — production `script-src 'self'`; crawler inline `<script>` replaced with `<meta http-equiv="refresh">`; dev keeps the relaxed directives. |
 | C7 | **High** | `csurf` is archived/unmaintained and is wired for `/api/payments`, `/api/shipping`, `/api/notifications`. | `server.ts`, `package.json` | ⬜ **Open** — still in use. |
 | C8 | **High** | Admin isolation depends on hostname comparison against `VITE_ADMIN_DOMAIN`; you must actually provision two distinct origins or the guard is decorative. | `src/routes/DomainGuard.tsx` | 🟡 **Code correct; needs two real Render origins (human).** Test-only bypass is dead in production builds. |
 | C9 | **High** | Rate limiting uses the default in-memory store. With more than one Render instance the limit is per-instance. | `server.ts` L224 | ⬜ **Open** — fine on a single instance only. |
@@ -116,7 +116,7 @@ Supabase
 | C16 | **Low** | Duplicated `playwright-report/` entry in `.gitignore`; duplicated "Stop local Supabase" step. | `.gitignore`, `staging.yml` | ✅ **Fixed** — single entry, single step. |
 
 Legend: ✅ fixed on `develop` · 🟡 partial or needs a human action · ⬜ still open.
-The build-blocking remainder is C4, C6, C7, C9 and the unbuilt real carrier (C3).
+The build-blocking remainder is C7, C9 and the unbuilt real carrier (C3).
 
 ### A.4 Stack-fit verdict
 
@@ -748,8 +748,8 @@ production-facing.
 
 ### Status snapshot (2026-10-14)
 
-Next actionable work, in order: **C4 Sentry SDK** → **C6 CSP tightening** →
-**C7 csurf replacement (needs an ADR)** → **C9 shared rate-limit store** →
-Phase 2 live Supabase provisioning → Phase 6 E2E proof. Full list:
-`docs/PRODUCTION_READINESS_TASKS.md`.
+Next actionable work, in order: **C7 csurf replacement (needs an ADR)** →
+**C9 shared rate-limit store** → T6 mock driver out of the bundle → Phase 2 live
+Supabase provisioning → Phase 6 E2E proof. C4 (Sentry) and C6 (CSP) are done.
+Full list: `docs/PRODUCTION_READINESS_TASKS.md`.
 

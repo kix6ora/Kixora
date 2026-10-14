@@ -5,8 +5,10 @@ import App from './App';
 import { StoreProvider } from './context/StoreContext';
 import { getPublicSiteUrl } from './config/env';
 import { registerServiceWorker } from './pwa/registerServiceWorker';
+import { initSentry } from './lib/sentryBrowser';
 import './index.css';
 
+initSentry();
 if (import.meta.env.PROD) getPublicSiteUrl();
 if (import.meta.env.PROD) void registerServiceWorker();
 

@@ -15,8 +15,8 @@ This is the evidence-based remainder. Everything in §7 is already done — do n
 
 | # | Sev | Task | Where | Exit gate |
 |---|---|---|---|---|
-| T1 | 🔴 | **Real error tracking.** Install `@sentry/react` + `@sentry/node`; init server SDK in `server.ts` and client in `src/main.tsx`, gated on `SENTRY_DSN`. Delete the fake `fetch(sentryDsn)` POST in `monitoringService.dispatchToSentry` and route through the SDK. | `src/services/monitoringService.ts`, `server.ts`, `src/main.tsx`, `package.json` | A deliberately thrown staging error appears in Sentry within 60s. |
-| T2 | 🔴 | **CSP tightening.** Remove `'unsafe-eval'` from `script-src` (nothing needs it), then remove `'unsafe-inline'` via nonce/hash. Keep `'unsafe-inline'` only for `style-src` if the Tailwind runtime requires it. | `server.ts` L91–92 | Production CSP has no `'unsafe-eval'`; storefront + admin still render. |
+| T1 | ✅ | **DONE — Real error tracking.** `@sentry/react` + `@sentry/node` v11 added; SDK init in `src/lib/sentryBrowser.ts` / `src/lib/sentryServer.ts`, wired from `src/main.tsx` + `server.ts`, gated on `SENTRY_DSN`. The fake `fetch(DSN)` POST was removed from `monitoringService`. | `src/lib/sentry*.ts`, `src/services/monitoringService.ts`, `server.ts`, `src/main.tsx` | Code done. Remaining: set `SENTRY_DSN` on Render and verify one live event. Evidence: `docs/production-evidence/t1-t2-sentry-csp.md`. |
+| T2 | ✅ | **DONE — CSP tightening.** `script-src` is now `'self'` in production (no `'unsafe-inline'`/`'unsafe-eval'`); the crawler inline `<script>` became a `<meta http-equiv="refresh">`. | `server.ts`, `src/config/cspImageSources.ts` | Verified live header `script-src 'self'`. Evidence: `docs/production-evidence/t1-t2-sentry-csp.md`. |
 | T3 | 🔴 | **Replace `csurf`** (archived/unmaintained) with an `Origin`/`Sec-Fetch-Site` check + double-submit cookie. Write `docs/adr/NNNN-csrf.md` first (risk, alternative, rollback). Keep `/api/csrf` reachable cross-origin from the admin domain. | `server.ts` L188–219, `package.json` | Protected routes reject cross-site POSTs; ADR merged. |
 | T4 | 🔴 | **Shared rate-limit store.** Move `express-rate-limit` off the in-memory default to a shared backend (Upstash Redis / Supabase table) **or** explicitly document + accept per-instance limits and pin `numInstances: 1`. Keep `trust proxy`. | `server.ts` L224–248, `render.yaml` | Limit holds across instances, or single-instance is asserted in `render.yaml`. |
 | T5 | 🟠 | **Real carrier or explicit deferral.** Either implement The Courier Guy API (rates/waybill/tracking) or record the simulated-carrier + flat-rate path as an accepted go/no-go deferral. Production currently fails closed for labels/tracking and returns a flat-rate estimate for quotes. | `src/services/shipping/carrierDrivers.ts`, `shippingService.ts`, `flatRate.ts`, `README.md` | Live waybill + tracking webhook, **or** signed deferral in the go/no-go record. |
@@ -115,7 +115,9 @@ This is the evidence-based remainder. Everything in §7 is already done — do n
 ## 8. Suggested order
 
 ```
-T1 Sentry → T2 CSP → T3 csurf+ADR → T4 rate-limit store → T6 mock driver
+T3 csurf+ADR → T4 rate-limit store → T6 mock driver
   → T9–T15 Supabase live → T11/T16–T19 live security evidence
   → T22–T27 payments/fulfilment E2E → T28–T33 cutover + go/no-go
 ```
+
+*(T1 Sentry and T2 CSP are done — see `docs/production-evidence/t1-t2-sentry-csp.md`.)*

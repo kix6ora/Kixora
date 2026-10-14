@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCspConnectSources,
   buildCspImageSources,
+  buildCspScriptSources,
   buildCspWorkerSources,
 } from '../../src/config/cspImageSources';
 
@@ -30,5 +31,23 @@ describe('Content Security Policy image sources', () => {
   it('rejects model URLs with non-HTTP protocols or malformed URLs', () => {
     expect(() => buildCspConnectSources('javascript:alert(1)')).toThrow(/VITE_SNEAKER_MODEL_BASE_URL/);
     expect(() => buildCspConnectSources('not-a-url')).toThrow(/VITE_SNEAKER_MODEL_BASE_URL/);
+  });
+});
+
+describe('Content Security Policy script sources', () => {
+  it('locks production to self and drops unsafe-inline/unsafe-eval', () => {
+    const scriptSrc = buildCspScriptSources(true);
+
+    expect(scriptSrc).toEqual(["'self'"]);
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(scriptSrc).not.toContain("'unsafe-eval'");
+  });
+
+  it('keeps the relaxed directives for the Vite dev server', () => {
+    const scriptSrc = buildCspScriptSources(false);
+
+    expect(scriptSrc).toContain("'self'");
+    expect(scriptSrc).toContain("'unsafe-inline'");
+    expect(scriptSrc).toContain("'unsafe-eval'");
   });
 });
