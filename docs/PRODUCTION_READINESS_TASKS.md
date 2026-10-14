@@ -17,8 +17,8 @@ This is the evidence-based remainder. Everything in §7 is already done — do n
 |---|---|---|---|---|
 | T1 | ✅ | **DONE — Real error tracking.** `@sentry/react` + `@sentry/node` v11 added; SDK init in `src/lib/sentryBrowser.ts` / `src/lib/sentryServer.ts`, wired from `src/main.tsx` + `server.ts`, gated on `SENTRY_DSN`. The fake `fetch(DSN)` POST was removed from `monitoringService`. | `src/lib/sentry*.ts`, `src/services/monitoringService.ts`, `server.ts`, `src/main.tsx` | Code done. Remaining: set `SENTRY_DSN` on Render and verify one live event. Evidence: `docs/production-evidence/t1-t2-sentry-csp.md`. |
 | T2 | ✅ | **DONE — CSP tightening.** `script-src` is now `'self'` in production (no `'unsafe-inline'`/`'unsafe-eval'`); the crawler inline `<script>` became a `<meta http-equiv="refresh">`. | `server.ts`, `src/config/cspImageSources.ts` | Verified live header `script-src 'self'`. Evidence: `docs/production-evidence/t1-t2-sentry-csp.md`. |
-| T3 | 🔴 | **Replace `csurf`** (archived/unmaintained) with an `Origin`/`Sec-Fetch-Site` check + double-submit cookie. Write `docs/adr/NNNN-csrf.md` first (risk, alternative, rollback). Keep `/api/csrf` reachable cross-origin from the admin domain. | `server.ts` L188–219, `package.json` | Protected routes reject cross-site POSTs; ADR merged. |
-| T4 | 🔴 | **Shared rate-limit store.** Move `express-rate-limit` off the in-memory default to a shared backend (Upstash Redis / Supabase table) **or** explicitly document + accept per-instance limits and pin `numInstances: 1`. Keep `trust proxy`. | `server.ts` L224–248, `render.yaml` | Limit holds across instances, or single-instance is asserted in `render.yaml`. |
+| T3 | ✅ | **DONE — Replace `csurf`.** Removed from deps; `src/server/csrf.ts` implements a Fetch Metadata (`Sec-Fetch-Site`) guard + double-submit cookie. ADR: `docs/adr/0001-csrf-double-submit.md`. | `src/server/csrf.ts`, `server.ts`, `package.json` | Verified live: 403 on missing/cross-site, token accepted. Evidence: `docs/production-evidence/t3-t4-csrf-ratelimit.md`. |
+| T4 | ✅ | **DONE — Rate-limit store.** Policies extracted to `src/server/rateLimit.ts` (unit-tested); per-instance limits accepted and `numInstances: 1` pinned with an ADR reference in `render.yaml`. ADR: `docs/adr/0002-rate-limit-store.md`. | `src/server/rateLimit.ts`, `render.yaml` | Single-instance asserted in `render.yaml`; startup log reports the store mode. Evidence: `docs/production-evidence/t3-t4-csrf-ratelimit.md`. |
 | T5 | 🟠 | **Real carrier or explicit deferral.** Either implement The Courier Guy API (rates/waybill/tracking) or record the simulated-carrier + flat-rate path as an accepted go/no-go deferral. Production currently fails closed for labels/tracking and returns a flat-rate estimate for quotes. | `src/services/shipping/carrierDrivers.ts`, `shippingService.ts`, `flatRate.ts`, `README.md` | Live waybill + tracking webhook, **or** signed deferral in the go/no-go record. |
 | T6 | 🟠 | **Mock payment driver out of the bundle.** `MockPaymentDriver` is still bundled (`pi_mock_` in `dist/`); runtime-guarded but not bundler-excluded. Convert to a conditional dynamic `import()` behind `if (!import.meta.env.PROD)`. | `src/services/payments/index.ts` | `grep -rl "pi_mock_" dist/` prints nothing. |
 | T7 | 🟡 | **Retire stale docs.** `docs/PRODUCTION_PHASES.md` names the wrong repo/branch. Replace with a pointer to this file, or delete. | `docs/PRODUCTION_PHASES.md` | No doc references a non-existent repo/branch. |
@@ -115,9 +115,12 @@ This is the evidence-based remainder. Everything in §7 is already done — do n
 ## 8. Suggested order
 
 ```
-T3 csurf+ADR → T4 rate-limit store → T6 mock driver
-  → T9–T15 Supabase live → T11/T16–T19 live security evidence
-  → T22–T27 payments/fulfilment E2E → T28–T33 cutover + go/no-go
+T6 mock driver out of the bundle → T9–T15 Supabase live
+  → T11/T16–T19 live security evidence → T22–T27 payments/fulfilment E2E
+  → T28–T33 cutover + go/no-go
 ```
 
-*(T1 Sentry and T2 CSP are done — see `docs/production-evidence/t1-t2-sentry-csp.md`.)*
+*(T1 Sentry, T2 CSP, T3 csurf and T4 rate-limit store are done — evidence in
+`docs/production-evidence/`.)*
+
+Human-only steps are consolidated in **`docs/HUMAN_ACTIONS.md`**.

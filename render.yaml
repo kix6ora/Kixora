@@ -33,7 +33,7 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: node dist/server.cjs
     healthCheckPath: /api/health
-    numInstances: 1
+    numInstances: 1 # ADR 0002: pin to 1 until a shared rate-limit store exists
     domains:
       - kixora.com
       - www.kixora.com
@@ -130,7 +130,7 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: node dist/server.cjs
     healthCheckPath: /api/health
-    numInstances: 1
+    numInstances: 1 # ADR 0002: pin to 1 until a shared rate-limit store exists
     envVars:
       - key: NODE_ENV
         value: production
@@ -198,7 +198,7 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: node dist/server.cjs
     healthCheckPath: /api/health
-    numInstances: 1
+    numInstances: 1 # ADR 0002: pin to 1 until a shared rate-limit store exists
     envVars:
       - key: NODE_ENV
         value: production

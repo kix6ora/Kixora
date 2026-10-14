@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import csurf from 'csurf';
+import { CSRF_COOKIE_NAME, createCsrfCookieMiddleware, createCsrfProtection, createFetchMetadataGuard } from './src/server/csrf';
 import { webhookService } from './src/services/webhookService';
 import { shippingService } from './src/services/shipping/shippingService';
 import { trackingWebhookService } from './src/services/shipping/trackingWebhookService';
@@ -18,6 +18,7 @@ import { authorizePayFastOrder, initiatePayFastCheckout } from './src/services/p
 import { buildCspConnectSources, buildCspImageSources, buildCspScriptSources, buildCspWorkerSources } from './src/config/cspImageSources';
 import { mountProductionStaticAssets } from './src/server/staticAssets';
 import { isRateLimitExempt } from './src/server/rateLimitSkip';
+import { RATE_LIMIT_POLICIES, rateLimitStoreSummary } from './src/server/rateLimit';
 import { initSentry } from './src/lib/sentryServer';
 import { monitoringService } from './src/services/monitoringService';
 
@@ -52,6 +53,7 @@ async function startServer() {
   // Error tracking is real only when the SDK initialises (SENTRY_DSN present).
   const sentryEnabled = initSentry();
   logger.info('[Startup] Error tracking', { sentryEnabled });
+  logger.info('[Startup] Rate limiting', rateLimitStoreSummary());
 
   // ===========================================================================
   // REQUEST CONTEXT & LOGGING (Task 2)
@@ -185,23 +187,25 @@ async function startServer() {
   );
 
   // ===========================================================================
-  // PHASE A: CSRF protection setup
+  // CSRF protection (replaces csurf — see docs/adr/0001-csrf-double-submit.md)
   // -----------------------------------------------------------------------
-  // cookie-parser must run before csurf to read the CSRF cookie.
-  // A token endpoint is provided for clients to retrieve a CSRF token.
-  // The protected route groups are then secured with csurf middleware.
+  // Two stateless layers:
+  //   1. Fetch Metadata guard on /api/* (rejects Sec-Fetch-Site: cross-site).
+  //   2. Double-submit cookie: csrf_secret cookie must match the csrf-token
+  //      header on protected route groups.
+  // cookie-parser must run first so the cookie is readable.
   // -----------------------------------------------------------------------
   app.use(cookieParser());
 
-  // CSRF token endpoint (outside protected groups)
-  const csrfProtection = csurf({
-    cookie: {
-      key: 'csrf_secret',
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: isProduction,
-    },
-  });
+  app.use(createCsrfCookieMiddleware({ secure: isProduction }));
+  app.use(
+    '/api',
+    createFetchMetadataGuard({
+      allowedOrigins: Array.isArray(corsOrigin) ? corsOrigin : [],
+    }),
+  );
+
+  const csrfProtection = createCsrfProtection();
 
   // Parse request bodies before CSRF validation so oversized requests return 413.
   app.use('/api/webhooks/tracking', express.raw({ type: 'application/json', limit: '10mb' }));
@@ -215,8 +219,10 @@ async function startServer() {
   app.use(express.json({ limit: '10kb' }));
   app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-  app.get(['/api/csrf', '/api/csrf-token'], csrfProtection, (_req, res) => {
-    res.json({ csrfToken: _req.csrfToken() });
+  // CSRF token endpoint (outside protected groups). The cookie was ensured by
+  // createCsrfCookieMiddleware above, so it is always present here.
+  app.get(['/api/csrf', '/api/csrf-token'], (req, res) => {
+    res.json({ csrfToken: req.cookies?.[CSRF_COOKIE_NAME] });
   });
 
   // Apply CSRF protection to the required route groups
@@ -227,9 +233,10 @@ async function startServer() {
   // ===========================================================================
   // RATE LIMITING (Task 2)
   // ===========================================================================
+  // Policies live in src/server/rateLimit.ts; the store is per-instance
+  // (see docs/adr/0002-rate-limit-store.md).
   const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per window
+    ...RATE_LIMIT_POLICIES.api,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later.' },
@@ -238,14 +245,12 @@ async function startServer() {
   });
 
   const authLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 10, // Limit each IP to 10 auth attempts per hour
+    ...RATE_LIMIT_POLICIES.auth,
     message: { error: 'Too many login attempts, please try again in an hour.' }
   });
 
   const checkoutLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
-    max: 5,
+    ...RATE_LIMIT_POLICIES.checkout,
     message: { error: 'Too many checkout attempts, please contact support if you are having issues.' }
   });
 
@@ -537,9 +542,6 @@ async function startServer() {
   // Global Error Handler for API & Payload errors
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (err) {
-      if (err.code === 'EBADCSRFTOKEN') {
-        return res.status(403).json({ error: 'Invalid CSRF token' });
-      }
       if (err.type === 'entity.too.large' || err.status === 413 || err.name === 'PayloadTooLargeError') {
         logger.warn('[Express] PayloadTooLargeError intercepted', { message: err.message });
         return res.status(413).json({ error: 'Payload too large' });
