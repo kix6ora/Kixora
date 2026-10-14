@@ -4,17 +4,33 @@
 **Stack of record:** React 18 + Vite 6 + TypeScript + Tailwind 3, Express 5
 (`server.ts` → `dist/server.cjs`), Supabase (Postgres/Auth/Storage/Realtime),
 deployed on **Render**, database and storage on **Supabase**.
-**Branches reviewed:** `main` @ `e4c973a`, `origin/develop` @ `592c451`
+**Branches reviewed:** `main` @ `e4c973a`, `origin/develop` @ `96b2033`
 **How to use this doc:** run the phases in order. Each phase has *Steps*,
 *Deliverables*, an *Exit gate* (evidence, not vibes), and *Agent rules* you paste
 into Claude / Cline / Copilot / Codex for that phase. Standing rules live in
 `CLAUDE.md` and `AGENTS.md` at the repo root.
 
-> **Progress:** ✅ **Phase 0 and Phase 1 are complete in the repo** — see
-> `docs/PHASE0_1_EXECUTION_REPORT.md` for the itemised evidence and the list of
-> human actions still required (Render services, domains, secrets, GCP secret
-> deletion, Firebase key rotation). Next phase: **Phase 2 — Supabase as the
-> single source of truth.**
+> **Status — reviewed 2026-10-14 against `develop` @ `96b2033` (the real integration tip).**
+>
+> | Phase | State | Note |
+> |---|---|---|
+> | 0 Baseline / hygiene | ✅ done | Dead artifacts, `engines`, `.gitignore`, governance docs all landed. |
+> | 1 De-platform to Render | ✅ done | Cloud Run workflows deleted, `render.yaml` + `deploy-render.yml` added, `verify-deploy-env.mjs` rewritten. |
+> | 2 Supabase single source | 🟡 partial | Migrations 0034–0037 landed (RLS lockdown, admin hardening, flat-rate). Live projects, flags and media migration still open. |
+> | 3 Drivers | 🟡 partial | Carrier deferral recorded + enforced (loud fallback, typed errors, `/api/ready`); mock payment driver still bundled (T6); live Courier Guy API deferred. |
+> | 4 Build/runtime integrity | ✅ mostly | SW versioned + network-first, `/api/health` vs `/api/ready` split, live-data build gate wired, CSP strict. |
+> | 5 Security verification | 🟡 partial | RLS hardening landed; `csurf` and the rate-limit store are resolved (ADRs 0001/0002); no live staging evidence yet. |
+> | 6 Payments/fulfilment E2E | ⬜ not started | No live PayFast/Resend/carrier proof. |
+> | 7 Observability/CI | 🟡 partial | Sentry SDK wired (T1); CI + release gate exist. Live-event verification still open. |
+> | 8 Launch cutover | ⬜ not started | — |
+>
+> **Corrections to the original draft:** `develop` is 5,094 insertions / 2,635
+> deletions ahead of `main` across 112 files; **37** migrations (not 33);
+> `bun.lock`, `firebase-applet-config.json`, `metadata.json`, `skills-lock.json`
+> and `kixora-staging-blockers.patch` are **deleted on `develop`**; the
+> health/readiness split, versioned service worker, `engines` pin and
+> `render.yaml` are **done**; `main` is still stale and must be fast-forwarded by
+> PR. Authoritative remaining-work list: **`docs/PRODUCTION_READINESS_TASKS.md`**.
 
 ---
 
@@ -78,26 +94,31 @@ Supabase
 10. **CI runs migrations against a real local Supabase** with
     `REQUIRE_SUPABASE=true`, so a missing DB is a failure, not a skip.
 
-### A.3 Critical findings (these are your launch blockers)
+### A.3 Findings — status against `develop` @ `96b2033`
 
-| ID | Severity | Finding | Where |
-|---|---|---|---|
-| C1 | **Critical** | Two deployment platforms in one repo. Cloud Run workflows + GCP secrets coexist with Render URLs. | `.github/workflows/deploy-*.yml`, `.env.example`, `docs/*` |
-| C2 | **Critical** | `firebase-applet-config.json` ships a real Firebase API key in git history. | repo root (`main`) |
-| C3 | **Critical** | Carrier "integration" is simulated but named as if live: hard-coded rates, random waybills, invented tracking events. | `src/services/shipping/carrierDrivers.ts` |
-| C4 | **Critical** | Sentry is configured (`SENTRY_DSN`) but there is **no Sentry SDK** in `package.json`; `monitoringService` POSTs JSON at the DSN URL, which is not an ingestion endpoint. You have no error tracking today. | `src/services/monitoringService.ts`, `package.json` |
-| C5 | **High** | PWA service worker is cache-first for *every* GET including navigations, with a static `kixora-shell-v1` cache name. Users get a stale shell after a deploy. | `public/sw.js` |
-| C6 | **High** | CSP still allows `'unsafe-inline'` and `'unsafe-eval'` in `script-src` in production. | `server.ts` L90 |
-| C7 | **High** | `csurf` is archived/unmaintained and is wired for `/api/payments`, `/api/shipping`, `/api/notifications`. | `server.ts`, `package.json` |
-| C8 | **High** | Admin isolation depends on hostname comparison against `VITE_ADMIN_DOMAIN`; on Render you must actually provision two distinct origins or the guard is decorative. | `src/routes/DomainGuard.tsx` |
-| C9 | **High** | Rate limiting uses the default in-memory store. With more than one Render instance the limit is per-instance, not global. | `server.ts` (~L230) |
-| C10 | **Medium** | Tests are predominantly mock-mode. They prove the app fails safe, not that it works against live Supabase/PayFast. | `tests/*` |
-| C11 | **Medium** | `bun.lock` + `package-lock.json` both present; `.clinerules` says npm only. | repo root |
-| C12 | **Medium** | Health check returns **503** when Supabase is unhealthy. Render restarts unhealthy instances, so a transient Supabase blip can become a restart loop. Split liveness (`/api/health`) from readiness (`/api/ready`). | `src/lib/healthCheck.ts` |
-| C13 | **Medium** | `VITE_CLOUDINARY_CLOUD_NAME` mismatch (`kixora` in code vs `vevnhwj6` in `.env.example`) → 404 images. | `src/lib/cloudinary.ts` vs `.env.example` |
-| C14 | **Medium** | No `render.yaml`, no `engines` field, no Render deploy workflow. | repo root |
-| C15 | **Low** | `docs/PRODUCTION_PHASES.md` names the wrong repo and a branch that does not exist. | `docs/PRODUCTION_PHASES.md` |
-| C16 | **Low** | Duplicated `playwright-report/` entry in `.gitignore`; duplicated "Stop local Supabase" step in `staging.yml`. | `.gitignore`, `.github/workflows/staging.yml` |
+| ID | Severity | Finding | Where | Status |
+|---|---|---|---|---|
+| C1 | **Critical** | Two deployment platforms in one repo. Cloud Run workflows + GCP secrets coexist with Render URLs. | `.github/workflows/deploy-*.yml`, `.env.example` | ✅ **Fixed** — Cloud Run workflows deleted; `deploy-render.yml` added; `.env.example` GCP vars removed. |
+| C2 | **Critical** | `firebase-applet-config.json` ships a real Firebase API key in git history. | repo root | 🟡 **File deleted on `develop`; key rotation still outstanding (human).** Deleting the file does not revoke the key. |
+| C3 | **Critical** | Carrier "integration" is simulated but named as if live: hard-coded rates, random waybills, invented tracking events. | `src/services/shipping/carrierDrivers.ts` | ✅ **Deferred (recorded + enforced)** — simulated driver is production-rejected; production quotes are an explicit `isEstimate` flat rate with a warning log; labels throw a typed `CarrierCapabilityError`; tracking returns a coded degraded result; carrier mode is on `/api/ready`. Live integration recorded as an accepted go/no-go deferral. |
+| C4 | **Critical** | Sentry is configured (`SENTRY_DSN`) but there is **no Sentry SDK** in `package.json`; `monitoringService` POSTs JSON at the DSN URL, which is not an ingestion endpoint. | `src/services/monitoringService.ts`, `package.json` | ✅ **Fixed** — `@sentry/react` + `@sentry/node` v11 installed; SDK init in `src/lib/sentry*.ts`, wired from `server.ts` + `src/main.tsx`; fake POST removed. Set `SENTRY_DSN` to activate. |
+| C5 | **High** | PWA service worker is cache-first for every GET including navigations, with a static cache name. | `public/sw.js` | ✅ **Fixed** — `kixora-shell-${BUILD_ID}` (build-injected), network-first navigation, cache-first `/assets/*` only, never caches `/api/*`, `SKIP_WAITING` channel. |
+| C6 | **High** | CSP still allows `'unsafe-inline'` and `'unsafe-eval'` in `script-src` in production. | `server.ts` L91 | ✅ **Fixed** — production `script-src 'self'`; crawler inline `<script>` replaced with `<meta http-equiv="refresh">`; dev keeps the relaxed directives. |
+| C7 | **High** | `csurf` is archived/unmaintained and is wired for `/api/payments`, `/api/shipping`, `/api/notifications`. | `server.ts`, `package.json` | ✅ **Fixed** — `csurf` removed; replaced by `src/server/csrf.ts` (Fetch Metadata guard + double-submit cookie). ADR `0001`. |
+| C8 | **High** | Admin isolation depends on hostname comparison against `VITE_ADMIN_DOMAIN`; you must actually provision two distinct origins or the guard is decorative. | `src/routes/DomainGuard.tsx` | 🟡 **Code correct; needs two real Render origins (human).** Test-only bypass is dead in production builds. |
+| C9 | **High** | Rate limiting uses the default in-memory store. With more than one Render instance the limit is per-instance. | `server.ts` L224 | ✅ **Fixed (decision)** — policies in `src/server/rateLimit.ts`; `numInstances: 1` pinned in `render.yaml`; ADR `0002` documents the shared-store prerequisite for scaling. |
+| C10 | **Medium** | Tests are predominantly mock-mode. They prove the app fails safe, not that it works against live Supabase/PayFast. | `tests/*` | ⬜ **Open** — live staging evidence still required (Phases 5–6). |
+| C11 | **Medium** | `bun.lock` + `package-lock.json` both present; `.clinerules` says npm only. | repo root | ✅ **Fixed** — `bun.lock` deleted on `develop`. |
+| C12 | **Medium** | Health check returns 503 when Supabase is unhealthy → Render restart loop. | `src/lib/healthCheck.ts` | ✅ **Fixed** — `livenessCheck` (`/api/health`) split from `readinessCheck` (`/api/ready`). |
+| C13 | **Medium** | `VITE_CLOUDINARY_CLOUD_NAME` mismatch → 404 images. | `src/lib/cloudinary.ts` | ✅ **Fixed** — code default aligned to `vevnhwj6`. |
+| C14 | **Medium** | No `render.yaml`, no `engines` field, no Render deploy workflow. | repo root | ✅ **Fixed** — all three present. |
+| C15 | **Low** | `docs/PRODUCTION_PHASES.md` names the wrong repo and a branch that does not exist. | `docs/PRODUCTION_PHASES.md` | ⬜ **Open** — stale, superseded by this doc. |
+| C16 | **Low** | Duplicated `playwright-report/` entry in `.gitignore`; duplicated "Stop local Supabase" step. | `.gitignore`, `staging.yml` | ✅ **Fixed** — single entry, single step. |
+
+Legend: ✅ fixed on `develop` · 🟡 partial or needs a human action · ⬜ still open.
+All Critical/High code findings (C3, C4, C6, C7, C9, C11–C14, C16) are resolved or
+recorded as accepted deferrals. What remains is verification against live
+infrastructure plus the human actions in `docs/HUMAN_ACTIONS.md`.
 
 ### A.4 Stack-fit verdict
 
@@ -119,7 +140,9 @@ there is no raw Postgres pool to tune), and exposes `/api/health`. The work is
 > Every change: feature branch → PR into `develop` → green CI → merge → verify
 > staging → promote PR `develop` → `main`. Never commit to `main` directly.
 >
-> **Definition of done for every phase.** `npx tsc --noEmit`,
+> **Definition of done for every phase.** `npx tsc --noEmit`, `npx eslint .
+> --max-warnings 0`, `npm run test`, `npm run build` all pass, and the phase's
+> Exit gate evidence is attached to the PR.
 
 ### Phase 0 — Baseline, branch discipline, repo hygiene
 
@@ -676,4 +699,60 @@ If anything is ambiguous or a test fails, stop and ask. Do not improvise.
 | 6 Payments/fulfilment | `AGENTS.md` §Money |
 | 7 Observability | `CLAUDE.md` §Honesty |
 | 8 Launch | `CLAUDE.md` §Production gate |
+
+---
+
+## Part D — Claude operating contract (brief, decisive, no busywork)
+
+This is the short version of everything above, for the architect role. It applies
+to every Claude session, on top of the standing rules in `CLAUDE.md`.
+
+### The loop
+
+Claude plans and writes prompts. Cline edits. The human approves anything
+production-facing.
+
+1. **Plan** — state it in ≤10 lines: goal, in-scope files, out-of-scope files, the
+   one risk that matters. No architecture essay.
+2. **Prompt** — emit one self-contained prompt for the editing agent using the
+   Part C template. Include the phase exit gate verbatim.
+3. **Approve** — when the agent returns, check the diff against the plan and the
+   exit gate. Approve, or send back exactly one corrective instruction.
+
+### Brevity rules (non-negotiable)
+
+- Answer first, explain only if asked. No preamble, no task recap, no reciting the
+  repo rules back at the user.
+- One recommendation, not a menu. Decide, then justify in one line. Ask a question
+  only when a wrong guess is expensive.
+- Never re-read a file or re-run a check already covered this session. No
+  exploratory checks "just in case".
+- The verification standard is the four commands above and nothing more. Do not
+  invent extra gates, extra tests, or extra docs for a task that did not ask for
+  them.
+- Cite `file:line`, not paragraphs. No hedging, no "as an AI".
+- Blocked? One line, then stop.
+
+### When Claude must stop and ask
+
+- The change would touch a hard rule in `CLAUDE.md` (RLS, CSRF, CORS, secrets,
+  the live-data gate, the production gate).
+- A production deploy, production migration, or secret change is implied.
+- Two readings of the task would produce different code and the wrong one is
+  expensive to undo.
+
+### Definition of done for a task
+
+- The diff is limited to the in-scope files.
+- The four verification commands pass, with raw output shown.
+- The current phase's exit gate is met with evidence, or reported as
+  "not verified" — never assumed.
+
+### Status snapshot (2026-10-14)
+
+Next actionable work, in order: **T6 mock driver out of the bundle** → Phase 2 live
+Supabase provisioning → live security evidence (T11, T16–T19) → Phase 6 E2E proof.
+C4 (Sentry), C6 (CSP), C7 (csurf) and C9 (rate-limit store) are done.
+Full list: `docs/PRODUCTION_READINESS_TASKS.md`. Human-only steps:
+`docs/HUMAN_ACTIONS.md`.
 

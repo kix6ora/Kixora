@@ -51,6 +51,27 @@ export interface ShippingRateQuote {
   rateZar: number;
   currency: 'ZAR';
   isInsured: boolean;
+  /**
+   * True when this rate is a deterministic estimate rather than a live carrier
+   * quote (production flat-rate fallback). Callers must surface this to the user.
+   */
+  isEstimate?: boolean;
+}
+
+export type CarrierErrorCode =
+  | 'CARRIER_NOT_CONFIGURED'
+  | 'CARRIER_LABEL_NOT_IMPLEMENTED'
+  | 'CARRIER_TRACKING_NOT_IMPLEMENTED';
+
+/** Thrown when a carrier capability is unavailable; carries a machine-readable code. */
+export class CarrierCapabilityError extends Error {
+  readonly code: CarrierErrorCode;
+
+  constructor(code: CarrierErrorCode, message: string) {
+    super(message);
+    this.name = 'CarrierCapabilityError';
+    this.code = code;
+  }
 }
 
 export interface ShippingLabelRequest {
@@ -106,6 +127,8 @@ export interface CarrierTrackingResult {
    * so callers can surface a degraded-tracking reason instead of real milestones.
    */
   error?: string;
+  /** Machine-readable reason matching `error`. */
+  errorCode?: CarrierErrorCode;
   rawPayload?: any;
 }
 

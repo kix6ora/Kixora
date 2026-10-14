@@ -229,9 +229,10 @@ export interface ObservabilityConfig {
 }
 
 export function getObservabilityConfig(): ObservabilityConfig {
-  const env = typeof process !== 'undefined' ? process.env : {};
+  // readEnv checks process.env first, then import.meta.env, so the same helper
+  // resolves SENTRY_DSN on the server and VITE_SENTRY_DSN in the browser.
   return {
-    sentryDsn: env.SENTRY_DSN || env.VITE_SENTRY_DSN || '',
-    environment: env.SENTRY_ENVIRONMENT || env.NODE_ENV || 'development',
+    sentryDsn: readEnv('SENTRY_DSN') || readEnv('VITE_SENTRY_DSN') || '',
+    environment: readEnv('SENTRY_ENVIRONMENT') || readEnv('NODE_ENV') || readEnv('MODE') || 'development',
   };
 }

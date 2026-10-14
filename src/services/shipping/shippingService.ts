@@ -7,9 +7,12 @@ import {
   ShippingLabelRequest,
   ShippingLabelResult,
   CarrierTrackingResult,
+  CarrierCapabilityError,
 } from './carrierTypes';
 import { SimulatedCourierGuyDriver } from './carrierDrivers';
 import { calculateShipping } from './flatRate';
+import { CARRIER_INTEGRATION_STATUS, describeCarrierMode } from './carrierCapabilities';
+import { logger } from '../../../logger';
 
 /** Resolves the flat-rate estimate for a production quote request. */
 function productionFlatRateZar(request: ShippingRateRequest): number {
@@ -32,6 +35,7 @@ function buildProductionFlatRateQuote(request: ShippingRateRequest): ShippingRat
     rateZar: productionFlatRateZar(request),
     currency: 'ZAR',
     isInsured: false,
+    isEstimate: true,
   };
 }
 
@@ -74,8 +78,16 @@ export class ShippingService {
    */
   async calculateRates(request: ShippingRateRequest): Promise<ShippingRateQuote[]> {
     if (process.env.NODE_ENV === 'production') {
-      // Deterministic flat-rate estimate instead of a live carrier rate
-      return [buildProductionFlatRateQuote(request)];
+      // No live carrier call: return a deterministic flat-rate estimate and make
+      // the degradation loud. Silent fallback pricing was a recorded risk.
+      const quote = buildProductionFlatRateQuote(request);
+      logger.warn('[Shipping] Flat-rate estimate used (carrier not live)', {
+        carrierMode: describeCarrierMode(),
+        rateZar: quote.rateZar,
+        itemsCount: request.itemsCount,
+        totalValueZar: request.totalValueZar,
+      });
+      return [quote];
     }
     const quotes: ShippingRateQuote[] = [];
 
@@ -96,7 +108,10 @@ export class ShippingService {
    */
   async createShipmentLabel(request: ShippingLabelRequest): Promise<ShippingLabelResult> {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('The Courier Guy API integration is not implemented; production labels are unavailable.');
+      throw new CarrierCapabilityError(
+        'CARRIER_LABEL_NOT_IMPLEMENTED',
+        `The Courier Guy label API is not implemented (requires ${CARRIER_INTEGRATION_STATUS.requiresCredential} and a live integration). See docs/production-evidence/go-no-go.md.`,
+      );
     }
     const driver = this.getDriver(request.carrierId);
     const labelResult = await driver.generateLabel(request);
@@ -161,6 +176,7 @@ export class ShippingService {
         destination: '',
         events: [],
         error: 'The Courier Guy API integration is not implemented; production tracking is unavailable.',
+        errorCode: 'CARRIER_TRACKING_NOT_IMPLEMENTED',
       };
     }
     const driver = this.getDriver(carrierId);

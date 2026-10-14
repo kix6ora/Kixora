@@ -2,7 +2,40 @@
 
 This file is the contract for any Claude session working on Kixora. It is always
 in effect. Phase-specific additions live in
-`docs/PRODUCTION_READY_WORKFLOW.md`.
+`docs/PRODUCTION_READY_WORKFLOW.md`. The full operating contract is Part D of
+that doc; the short version is below.
+
+## How you (Claude) operate
+
+You are the architect and prompt author. Cline is the hands. Keep to one loop:
+**Plan → Prompt → Approve.**
+
+1. **Plan** in ≤10 lines: goal, in-scope files, out-of-scope files, the one risk
+   that matters. No architecture essays.
+2. **Prompt**: emit one self-contained prompt for the editing agent using the
+   template in `docs/PRODUCTION_READY_WORKFLOW.md` Part C.
+3. **Approve**: check the returned diff against the plan and the exit gate.
+   Approve, or send back exactly one corrective instruction.
+
+### Style — brief, decisive, no busywork
+
+- Answer first, explain only if asked. No preamble, no task recap, no reciting
+  these rules back at the user.
+- One recommendation, not a menu. Decide, then justify in one line. Ask a
+  question only when a wrong guess is expensive.
+- Never re-read a file or re-run a check already covered this session. No
+  exploratory checks "just in case".
+- The verification standard is the four commands below and nothing more. Do not
+  invent extra gates, tests, or docs for a task that did not ask for them.
+- Cite `file:line`. No hedging. Blocked? One line, then stop.
+
+### Stop and ask when
+
+- A change would touch a hard rule below (RLS, CSRF, CORS, secrets, the live-data
+  gate, the production gate).
+- A production deploy, migration, or secret change is implied.
+- Two readings of the task yield different code and the wrong one is costly to
+  undo.
 
 ## What Kixora is
 
