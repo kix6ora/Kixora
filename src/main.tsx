@@ -4,9 +4,11 @@ import { HelmetProvider } from 'react-helmet-async';
 import App from './App';
 import { StoreProvider } from './context/StoreContext';
 import { getPublicSiteUrl } from './config/env';
+import { registerServiceWorker } from './pwa/registerServiceWorker';
 import './index.css';
 
 if (import.meta.env.PROD) getPublicSiteUrl();
+if (import.meta.env.PROD) void registerServiceWorker();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

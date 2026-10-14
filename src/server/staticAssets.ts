@@ -10,6 +10,12 @@ import fs from 'node:fs';
  *   route order), then fall back to the SPA index for everything else.
  */
 export function mountProductionStaticAssets(app: Express, distPath: string): void {
+  // The service worker script must revalidate on every load so updates apply.
+  app.get('/sw.js', (_req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.sendFile(path.join(distPath, 'sw.js'));
+  });
+
   app.use(express.static(distPath));
 
   app.get('/{*splat}', (req, res) => {
